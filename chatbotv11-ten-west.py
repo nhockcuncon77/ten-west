@@ -8,7 +8,7 @@ import math
 import json
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime, timedelta, date
-from typing import Optional, List
+from typing import Optional, List, Dict
 from collections import defaultdict
 
 import pandas as pd
@@ -565,66 +565,408 @@ def _round_cents(x: float) -> float:
     """Banker-safe round half up to 2dp using Decimal."""
     return float(Decimal(str(x)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
-def tool_asins_avg_price_below_plan(_: str) -> str:
+# ──────────────────────────────────────────────────────────────────────────────
+# SMART FILE DETECTION FUNCTIONS
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _smart_find_file(dataframes: Dict[str, pd.DataFrame], pattern: str, company_name: str = None) -> Optional[str]:
+    """
+    Smart file detection that looks for files matching a pattern with company name.
+    
+    Args:
+        dataframes: Dictionary of filename -> DataFrame
+        pattern: Pattern to match (e.g., 'full_detailed_aggregated_report', 'SP')
+        company_name: Company name to look for (e.g., 'reach_brands', 'ten_west', 'reach_products')
+    
+    Returns:
+        Filename if found, None otherwise
+    """
+    available_files = list(dataframes.keys())
+    
+    # If company_name is provided, look for files with that company name
+    if company_name:
+        company_lower = company_name.lower().replace(' ', '_')
+        
+        # Look for exact company match first
+        for filename in available_files:
+            filename_lower = filename.lower()
+            if pattern.lower() in filename_lower and company_lower in filename_lower:
+                return filename
+        
+        # Look for partial company match
+        company_parts = company_lower.split('_')
+        for filename in available_files:
+            filename_lower = filename.lower()
+            if pattern.lower() in filename_lower:
+                # Check if any part of company name is in filename
+                if any(part in filename_lower for part in company_parts if len(part) > 2):
+                    return filename
+    
+    # Fallback: look for any file matching the pattern
+    for filename in available_files:
+        filename_lower = filename.lower()
+        if pattern.lower() in filename_lower:
+            return filename
+    
+    return None
+
+def _smart_find_asin_report(dataframes: Dict[str, pd.DataFrame], company_name: str = None) -> Optional[str]:
+    """
+    Smart detection of ASIN aggregated report files.
+    Looks for files like: full_detailed_aggregated_report_{company_name}.xlsx
+    """
+    available_files = list(dataframes.keys())
+    
+    # Priority 1: Look for exact company match with full_detailed_aggregated_report (main report, not GM)
+    if company_name:
+        company_lower = company_name.lower().replace(' ', '_')
+        
+        for filename in available_files:
+            filename_lower = filename.lower()
+            if ('full_detailed_aggregated_report' in filename_lower and 
+                company_lower in filename_lower and 
+                'gm' not in filename_lower and     # Exclude GM reports
+                '__' not in filename):  # Exclude sheet-specific files
+                return filename
+    
+    # Priority 2: Look for main full_detailed_aggregated_report file (ASIN-level, not brand-level)
+    for filename in available_files:
+        filename_lower = filename.lower()
+        if ('full_detailed_aggregated_report' in filename_lower and 
+            'brand' not in filename_lower and  # Exclude brand-level reports
+            'gm' not in filename_lower and     # Exclude GM reports
+            '__' not in filename):  # Exclude sheet-specific files
+            return filename
+    
+    # Priority 3: Look for any full_detailed_aggregated_report file
+    for filename in available_files:
+        filename_lower = filename.lower()
+        if ('full_detailed_aggregated_report' in filename_lower and 
+            '__' not in filename):  # Exclude sheet-specific files
+            return filename
+    
+    return None
+
+def _smart_find_brand_report(dataframes: Dict[str, pd.DataFrame], company_name: str = None) -> Optional[str]:
+    """
+    Smart detection of brand aggregated report files.
+    Looks for files like: full_detailed_aggregated_report_brand_{company_name}.xlsx
+    """
+    available_files = list(dataframes.keys())
+    
+    # Priority 1: Look for exact company match with brand report
+    if company_name:
+        company_lower = company_name.lower().replace(' ', '_')
+        
+        for filename in available_files:
+            filename_lower = filename.lower()
+            if ('full_detailed_aggregated_report_brand' in filename_lower and 
+                company_lower in filename_lower and 
+                '__' not in filename):  # Exclude sheet-specific files
+                return filename
+    
+    # Priority 2: Look for any brand report file
+    for filename in available_files:
+        filename_lower = filename.lower()
+        if ('full_detailed_aggregated_report_brand' in filename_lower and 
+            '__' not in filename):  # Exclude sheet-specific files
+            return filename
+    
+    return None
+
+def _smart_find_sp_report(dataframes: Dict[str, pd.DataFrame], company_name: str = None) -> Optional[str]:
+    """
+    Smart detection of SP (Settlement Period) report files.
+    Looks for files like: SP {company_name} {date}.xlsx
+    """
+    return _smart_find_file(dataframes, 'SP', company_name)
+
+def _smart_find_business_report(dataframes: Dict[str, pd.DataFrame], company_name: str = None) -> Optional[str]:
+    """
+    Smart detection of business report files.
+    Looks for files like: BusinessReport {date}.xlsx
+    """
+    return _smart_find_file(dataframes, 'BusinessReport', company_name)
+
+def _smart_find_fees_underperformers(dataframes: Dict[str, pd.DataFrame], company_name: str = None) -> Optional[str]:
+    """
+    Smart detection of fees underperformers files.
+    Looks for files like: Fees_PerUnit_Underperformers_{company_name}.xlsx
+    """
+    available_files = list(dataframes.keys())
+    
+    # Priority 1: Look for exact company match
+    if company_name:
+        company_lower = company_name.lower().replace(' ', '_')
+        for filename in available_files:
+            filename_lower = filename.lower()
+            if ('fees_perunit_underperformers' in filename_lower and 
+                company_lower in filename_lower and 
+                '__' not in filename):
+                return filename
+    
+    # Priority 2: Look for any fees underperformers file (fallback)
+    for filename in available_files:
+        filename_lower = filename.lower()
+        if ('fees_perunit_underperformers' in filename_lower and 
+            '__' not in filename):
+            return filename
+    
+    return None
+
+def _find_asin_in_dataframes(dataframes: Dict[str, pd.DataFrame], asin: str) -> tuple:
+    """
+    Find ASIN in dataframes, handling both ASIN-level and brand-level reports.
+    Returns (dataframe, row, asin_column_name) or (None, None, None) if not found.
+    """
+    # First try to find ASIN-level reports
+    asin_report = _smart_find_asin_report(dataframes)
+    if asin_report and asin in dataframes[asin_report]['ASIN'].values:
+        df = dataframes[asin_report]
+        row = df[df['ASIN'] == asin].iloc[0]
+        return df, row, 'ASIN'
+    
+    # Then try brand-level reports
+    brand_report = _smart_find_brand_report(dataframes)
+    if brand_report and asin in dataframes[brand_report]['ASIN'].values:
+        df = dataframes[brand_report]
+        row = df[df['ASIN'] == asin].iloc[0]
+        return df, row, 'ASIN'
+    
+    return None, None, None
+
+def _calculate_settlement_period(dataframes: Dict[str, pd.DataFrame], company_name: str = None) -> str:
+    """
+    Calculate the settlement period from the available dataframes.
+    Returns a formatted date range string.
+    """
+    try:
+        print(f"DEBUG: _calculate_settlement_period called with {len(dataframes)} dataframes")
+        print(f"DEBUG: Dataframe keys: {list(dataframes.keys())}")
+        
+        # First try to find the Transaction Report sheet (same logic as original)
+        for filename, df in dataframes.items():
+            if "Transaction Report" in filename:
+                print(f"DEBUG: Found Transaction Report in {filename}")
+                print(f"DEBUG: Columns: {list(df.columns)}")
+                # Look for date columns
+                date_cols = [c for c in df.columns if "date" in c.lower()]
+                if date_cols:
+                    date_col = date_cols[0]
+                    print(f"DEBUG: Using date column: {date_col}")
+                    try:
+                        # Apply the same date processing as the original code
+                        df_clean = df.copy()
+                        print(f"DEBUG: Original date values sample: {df_clean[date_col].head()}")
+                        df_clean[date_col] = df_clean[date_col].astype(str).str.replace(r"\s[A-Z]{3,4}$", "", regex=True)
+                        df_clean[date_col] = pd.to_datetime(df_clean[date_col], errors="coerce")
+                        
+                        # Remove any NaT values
+                        df_clean = df_clean.dropna(subset=[date_col])
+                        print(f"DEBUG: Cleaned dataframe has {len(df_clean)} rows")
+                        
+                        if not df_clean.empty:
+                            start_date = df_clean[date_col].min().date()
+                            end_date = df_clean[date_col].max().date()
+                            result = f"{fmt_date(start_date)} – {fmt_date(end_date)}"
+                            print(f"DEBUG: Calculated settlement period: {result}")
+                            return result
+                    except Exception as e:
+                        print(f"Warning: Error processing dates in {filename}: {e}")
+                        continue
+                else:
+                    print(f"DEBUG: No date columns found in {filename}")
+            else:
+                print(f"DEBUG: Skipping {filename} (not Transaction Report)")
+        
+        print("DEBUG: No Transaction Report found, trying fallback...")
+        # Fallback: try any dataframe with date columns
+        for filename, df in dataframes.items():
+            date_cols = [c for c in df.columns if "date" in c.lower()]
+            if date_cols:
+                date_col = date_cols[0]
+                try:
+                    df_clean = df.copy()
+                    df_clean[date_col] = pd.to_datetime(df_clean[date_col], errors="coerce")
+                    df_clean = df_clean.dropna(subset=[date_col])
+                    
+                    if not df_clean.empty:
+                        start_date = df_clean[date_col].min().date()
+                        end_date = df_clean[date_col].max().date()
+                        return f"{fmt_date(start_date)} – {fmt_date(end_date)}"
+                except Exception as e:
+                    print(f"Warning: Error processing dates in {filename}: {e}")
+                    continue
+                    
+    except Exception as e:
+        print(f"Warning: Could not calculate settlement period: {e}")
+    
+    return "Current Period"  # Default fallback
+
+def _build_dataframes_dict() -> Dict[str, pd.DataFrame]:
+    """
+    Build a dictionary of dataframes for use with the updated tool functions.
+    This creates a unified interface similar to goodtools.py.
+    """
+    dataframes = {}
+    
+    # Add ASIN report
+    if os.path.exists(ASIN_REPORT_PATH):
+        dataframes[ASIN_REPORT_PATH] = pd.read_excel(ASIN_REPORT_PATH)
+        # Clean up the dataframe
+        df = dataframes[ASIN_REPORT_PATH]
+        df = df.drop(df.tail(1).index)  # drop trailing total row if present
+        # Convert "quantity" to float
+        df["quantity"] = (
+            df["quantity"]
+              .astype(str)
+              .str.replace(",", "")
+              .astype(float)
+        )
+        dataframes[ASIN_REPORT_PATH] = df
+    
+    # Add brand report
+    if os.path.exists(BRAND_REPORT_PATH):
+        dataframes[BRAND_REPORT_PATH] = pd.read_excel(BRAND_REPORT_PATH)
+    
+    # Add GM report
+    if os.path.exists(GM_REPORT_PATH):
+        dataframes[GM_REPORT_PATH] = pd.read_excel(GM_REPORT_PATH)
+    
+    # Add SP report (Order file)
+    if os.path.exists(ORDER_PATH):
+        dataframes[ORDER_PATH] = pd.read_excel(ORDER_PATH)
+        # Add individual sheets
+        try:
+            dataframes[f"{ORDER_PATH}__Unit Financial"] = pd.read_excel(ORDER_PATH, sheet_name="Unit Financial")
+        except:
+            pass
+        try:
+            dataframes[f"{ORDER_PATH}__Business Report"] = pd.read_excel(ORDER_PATH, sheet_name="Business Report")
+        except:
+            pass
+        try:
+            dataframes[f"{ORDER_PATH}__Transaction Report"] = pd.read_excel(ORDER_PATH, sheet_name="Transaction Report", skiprows=7)
+        except:
+            pass
+    
+    # Add business report if found
+    for search_dir in BUSINESS_REPORT_SEARCH_DIRS:
+        if os.path.exists(search_dir):
+            for filename in os.listdir(search_dir):
+                if filename.startswith("BusinessReport") and filename.endswith(".xlsx"):
+                    full_path = os.path.join(search_dir, filename)
+                    dataframes[full_path] = pd.read_excel(full_path)
+                    break
+    
+    # Add fees underperformers files
+    fees_files = [
+        "Fees_PerUnit_Underperformers_ten_west.xlsx",
+        "Fees_PerUnit_Underperformers.xlsx"
+    ]
+    for fees_file in fees_files:
+        if os.path.exists(fees_file):
+            try:
+                dataframes[fees_file] = pd.read_excel(fees_file)
+                print(f"DEBUG: Loaded fees underperformers file: {fees_file}")
+            except Exception as e:
+                print(f"DEBUG: Error loading {fees_file}: {e}")
+    
+    return dataframes
+
+def tool_asins_avg_price_below_plan(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """
     Finds ASINs where Actual Avg Sales Price < Planned Per-Unit price.
-    Saves a formatted table in session_state['below_plan_table'].
+    Returns formatted table with Brand, ASIN, Planned Sales Price, Average Sales Price, Delta, Units Sold, Total Lost Revenue.
     """
-    period_str = settlement_period
+    try:
+        # Debug: Print available files and their columns
+        print(f"DEBUG: Available files: {list(dataframes.keys())}")
+        for filename, df in dataframes.items():
+            print(f"DEBUG: {filename} columns: {list(df.columns)}")
+        
+        # Find ASIN report using smart detection
+        asin_report = _smart_find_asin_report(dataframes, company_name)
+        if not asin_report:
+            return "Error: Could not find ASIN aggregated report file."
+        
+        asin_df = dataframes[asin_report]
+        print(f"DEBUG: Using ASIN report: {asin_report}")
+        
+        # Find Unit Financial sheet using smart detection
+        unit_financial_key = None
+        for key in dataframes.keys():
+            if 'Unit Financial' in key:
+                unit_financial_key = key
+                break
+        
+        if not unit_financial_key:
+            return "Error: Could not find Unit Financial sheet."
+        
+        unit_df = dataframes[unit_financial_key]
+        print(f"DEBUG: Using Unit Financial sheet: {unit_financial_key}")
 
-    # 1) Base from asin_df
-    df = asin_df[["ASIN", "Amazon Top-line Sales (ATS)", "quantity", "Brands"]].copy()
-    df["Total_ATS"]  = df["Amazon Top-line Sales (ATS)"].map(_to_money_float)
-    df["Units_Sold"] = pd.to_numeric(df["quantity"], errors="coerce").fillna(0).astype(int)
-    df["Actual_Avg_Price"] = df["Total_ATS"] / df["Units_Sold"].replace(0, pd.NA)
+        # 1) Base from asin_df
+        df = asin_df[["ASIN", "Amazon Top-line Sales (ATS)", "quantity", "Brands"]].copy()
+        df["Total_ATS"]  = df["Amazon Top-line Sales (ATS)"].map(_to_money_float)
+        df["Units_Sold"] = pd.to_numeric(df["quantity"], errors="coerce").fillna(0).astype(int)
+        df["Actual_Avg_Price"] = df["Total_ATS"] / df["Units_Sold"].replace(0, pd.NA)
 
-    # 2) Planned per-unit
-    planned = unit_df[["ASIN", "REACH'S FLOOR PRICE"]].rename(
-        columns={"REACH'S FLOOR PRICE": "Planned_Per_Unit"}
-    )
-    planned["Planned_Per_Unit"] = planned["Planned_Per_Unit"].map(_to_money_float)
+        # 2) Planned per-unit
+        planned = unit_df[["ASIN", "REACH'S FLOOR PRICE"]].rename(
+            columns={"REACH'S FLOOR PRICE": "Planned_Per_Unit"}
+        )
+        planned["Planned_Per_Unit"] = planned["Planned_Per_Unit"].map(_to_money_float)
 
-    # 3) Merge + keep only below plan
-    df = df.merge(planned, on="ASIN", how="left")
-    df = df[df["Actual_Avg_Price"] < df["Planned_Per_Unit"]].copy()
-    if df.empty:
-        st.session_state["agent_error"] = f"No ASINs with average sales price below plan for {period_str}."
-        return "no_data"
+        # 3) Merge + keep only below plan
+        df = df.merge(planned, on="ASIN", how="left")
+        df = df[df["Actual_Avg_Price"] < df["Planned_Per_Unit"]].copy()
+        if df.empty:
+            return "No ASINs with average sales price below plan found."
 
-    # 4) Delta & lost revenue
-    df["Delta"] = (df["Planned_Per_Unit"] - df["Actual_Avg_Price"]).map(_round_cents)
-    df = df[df["Delta"] > 0]
-    if df.empty:
-        st.session_state["agent_error"] = f"No positive deltas after rounding for {period_str}."
-        return "no_data"
-    df["Total Lost Revenue"] = (df["Delta"] * df["Units_Sold"]).map(_round_cents)
+        # 4) Delta & lost revenue
+        df["Delta"] = (df["Planned_Per_Unit"] - df["Actual_Avg_Price"]).map(_round_cents)
+        df = df[df["Delta"] > 0]
+        if df.empty:
+            return "No positive deltas after rounding found."
+        df["Total Lost Revenue"] = (df["Delta"] * df["Units_Sold"]).map(_round_cents)
 
-    # 5) Pretty output
-    out = pd.DataFrame({
-        "Brand":  df["Brands"],
-        "ASIN":   df["ASIN"],
-        "Planned Sales Price": df["Planned_Per_Unit"].map("${:,.2f}".format),
-        "Average Sales Price": df["Actual_Avg_Price"].map("${:,.2f}".format),
-        "Delta":               df["Delta"].map("${:,.2f}".format),
-        "Units Sold":          df["Units_Sold"].map("{:,}".format),
-        "Total Lost Revenue":  df["Total Lost Revenue"].map("${:,.2f}".format),
-    })
-    out.index = range(1, len(out) + 1)
+        # 5) Pretty output
+        out = pd.DataFrame({
+            "Brand":  df["Brands"],
+            "ASIN":   df["ASIN"],
+            "Planned Sales Price": df["Planned_Per_Unit"].map("${:,.2f}".format),
+            "Average Sales Price": df["Actual_Avg_Price"].map("${:,.2f}".format),
+            "Delta":               df["Delta"].map("${:,.2f}".format),
+            "Units Sold":          df["Units_Sold"].map("{:,}".format),
+            "Total Lost Revenue":  df["Total Lost Revenue"].map("${:,.2f}".format),
+        })
+        out.index = range(1, len(out) + 1)
 
-    # Save for UI
-    st.session_state["below_plan_table"] = out
-    st.session_state["below_plan_period"] = period_str
-    return "ok"
+        # Calculate settlement period from the dataframes
+        print(f"DEBUG: Calculating settlement period for company: {company_name}")
+        print(f"DEBUG: Available dataframes: {list(dataframes.keys())}")
+        settlement_period = _calculate_settlement_period(dataframes, company_name)
+        print(f"DEBUG: Calculated settlement period: {settlement_period}")
+
+        # Save for UI
+        st.session_state["below_plan_table"] = out
+        st.session_state["below_plan_period"] = settlement_period
+
+        return f"Found {len(out)} ASINs with average sales price below plan for the settlement period {settlement_period}. Data saved to session state."
+    
+    except Exception as e:
+        return f"Error processing ASINs below plan: {str(e)}"
 
 
-def tool_asins_where_avg_price_lower_than_plan(prompt: str) -> str:
+def tool_asins_where_avg_price_lower_than_plan(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """
     Synonym of the previous tool (different phrasing). Reuses its logic.
     """
-    return tool_asins_avg_price_below_plan(prompt)
+    return tool_asins_avg_price_below_plan(dataframes, prompt, company_name)
 
 
-def tool_orders_below_plan_for_asin(prompt: str) -> str:
+def tool_orders_below_plan_for_asin(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """
     Show INDIVIDUAL ORDERS where per-order Avg Sales Price < planned price for a specific ASIN.
     This is DIFFERENT from tool_asins_avg_price_below_plan which shows aggregated ASIN summaries.
@@ -640,12 +982,36 @@ def tool_orders_below_plan_for_asin(prompt: str) -> str:
 
     asin_q = m.group(1).upper()
 
+    # Find ASIN report using smart detection
+    asin_report = _smart_find_asin_report(dataframes, company_name)
+    if not asin_report:
+        st.session_state["agent_error"] = "Could not find ASIN aggregated report file."
+        return "no_data"
+    
+    asin_df = dataframes[asin_report]
+
+    # Calculate settlement period early so it's available for error messages
+    settlement_period = _calculate_settlement_period(dataframes, company_name)
+
     # "did you mean?" fallback
     all_asins = asin_df["ASIN"].astype(str).str.upper().tolist()
     if asin_q not in all_asins:
         suggestion = difflib.get_close_matches(asin_q, all_asins, n=1, cutoff=0.6)
         if suggestion:
             asin_q = suggestion[0]
+
+    # Find Unit Financial sheet using smart detection
+    unit_financial_key = None
+    for key in dataframes.keys():
+        if 'Unit Financial' in key:
+            unit_financial_key = key
+            break
+    
+    if not unit_financial_key:
+        st.session_state["agent_error"] = "Could not find Unit Financial sheet."
+        return "no_data"
+    
+    unit_df = dataframes[unit_financial_key]
 
     # planned unit price
     plan_ser = (
@@ -658,6 +1024,19 @@ def tool_orders_below_plan_for_asin(prompt: str) -> str:
         return "no_data"
     plan_price = _to_money_float(plan_ser.iloc[0])
 
+    # Find Business Report sheet using smart detection
+    business_report_key = None
+    for key in dataframes.keys():
+        if 'Business Report' in key:
+            business_report_key = key
+            break
+    
+    if not business_report_key:
+        st.session_state["agent_error"] = "Could not find Business Report sheet."
+        return "no_data"
+    
+    business_df = dataframes[business_report_key]
+
     # Build SKU->ASIN map
     sku_asin_map = (
         business_df[["SKU", "(Child) ASIN"]]
@@ -668,6 +1047,19 @@ def tool_orders_below_plan_for_asin(prompt: str) -> str:
         )
         .drop_duplicates(subset="SKU", keep="first")
     )
+
+    # Find Transaction Report sheet using smart detection
+    transaction_report_key = None
+    for key in dataframes.keys():
+        if 'Transaction Report' in key:
+            transaction_report_key = key
+            break
+    
+    if not transaction_report_key:
+        st.session_state["agent_error"] = "Could not find Transaction Report sheet."
+        return "no_data"
+    
+    order_df = dataframes[transaction_report_key]
 
     df = (
         order_df
@@ -729,7 +1121,7 @@ def tool_orders_below_plan_for_asin(prompt: str) -> str:
     return "ok"
 
 
-def tool_gross_sales_by_asin(prompt: str) -> str:
+def tool_gross_sales_by_asin(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """
     Show gross sales by ASIN for last X days (7, 14, or 30 days).
     Examples: 'Show gross sales by ASIN for last week', 'Show the gross sales by ASIN for 14 days'.
@@ -836,7 +1228,7 @@ def tool_gross_sales_by_asin(prompt: str) -> str:
     return "ok"
 
 
-def tool_gross_sales_total(prompt: str) -> str:
+def tool_gross_sales_total(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """
     Show total gross sales for last week.
     Example: 'Show the gross sales for last week'.
@@ -895,7 +1287,7 @@ def tool_gross_sales_total(prompt: str) -> str:
     return "ok"
 
 
-def tool_net_sales_by_asin(prompt: str) -> str:
+def tool_net_sales_by_asin(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """
     Show net sales by ASIN for the settlement period.
     Examples: 'Show net sales by ASIN for last week', 'Show the net sales by ASIN'.
@@ -924,13 +1316,16 @@ def tool_net_sales_by_asin(prompt: str) -> str:
     df_net.index = range(1, len(df_net) + 1)
     df_net.index.name = "No."
 
+    # Calculate settlement period from the dataframes
+    settlement_period = _calculate_settlement_period(dataframes, company_name)
+
     # Save for UI
     st.session_state["net_sales_table"] = df_net
     st.session_state["net_sales_period"] = settlement_period
     return "ok"
 
 
-def tool_gross_sales_for_specific_asin(prompt: str) -> str:
+def tool_gross_sales_for_specific_asin(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """
     Show gross sales for a specific ASIN for last X days.
     Examples: 'Show gross sales for ASIN B0XXXXXXXX for last week'.
@@ -1031,7 +1426,7 @@ def tool_gross_sales_for_specific_asin(prompt: str) -> str:
     return "ok"
 
 
-def tool_conversion_rates_for_asins(prompt: str) -> str:
+def tool_conversion_rates_for_asins(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """Prepare table + period in session_state (for Streamlit to render)."""
     inv_xls, period_text, fname = read_weekly_inventory(prompt)
 
@@ -1087,7 +1482,7 @@ def tool_conversion_rates_for_asins(prompt: str) -> str:
     st.session_state["business_file"] = fname
     return "ok"
 
-def tool_average_conversion_rate(prompt: str) -> str:
+def tool_average_conversion_rate(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """Compute weighted average CR. Stores value; UI prints w/ settlement_period."""
     inv_xls, period_text, fname = read_weekly_inventory(prompt)
 
@@ -1138,7 +1533,7 @@ def tool_average_conversion_rate(prompt: str) -> str:
     return "ok"
 
 
-def tool_buy_box_percentages_for_asins(prompt: str) -> str:
+def tool_buy_box_percentages_for_asins(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """
     Show Buy Box percentages for ASINs for last week.
     Examples: 'Show the Buy Box percentages for my ASINs'.
@@ -1230,7 +1625,7 @@ def tool_buy_box_percentages_for_asins(prompt: str) -> str:
     return "ok"
 
 
-def tool_average_buy_box_percentage(prompt: str) -> str:
+def tool_average_buy_box_percentage(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """
     Show average Buy Box percentage for last week.
     Examples: 'Show my average Buy Box percentage for last week'.
@@ -1309,7 +1704,7 @@ def tool_average_buy_box_percentage(prompt: str) -> str:
     return "ok"
 
 
-def tool_sessions_for_asins(prompt: str) -> str:
+def tool_sessions_for_asins(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """
     Show total number of Sessions for ASINs for last X days.
     Examples: 'Show the total number of Sessions for my ASINs last week'.
@@ -1398,7 +1793,7 @@ def tool_sessions_for_asins(prompt: str) -> str:
     return "ok"
 
 
-def tool_average_order_value(prompt: str) -> str:
+def tool_average_order_value(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """
     Show Average Order Value for ASINs for last X days.
     Examples: 'Show the Average Order Value for my ASINs last week'.
@@ -1505,7 +1900,7 @@ def tool_average_order_value(prompt: str) -> str:
     return "ok"
 
 
-def tool_suppressed_asins(prompt: str) -> str:
+def tool_suppressed_asins(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """
     Show ASINs suppressed (Buy Box % ≤ 80%) for last X days.
     Examples: 'Show the ASINs suppressed last week'.
@@ -1623,7 +2018,7 @@ def tool_suppressed_asins(prompt: str) -> str:
     return "ok"
 
 
-def tool_currently_suppressed_asins(prompt: str) -> str:
+def tool_currently_suppressed_asins(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """
     Show ASINs currently suppressed (0% Buy Box).
     Examples: 'Show the ASINs currently suppressed'.
@@ -1703,7 +2098,7 @@ def tool_currently_suppressed_asins(prompt: str) -> str:
         return "no_data"
 
 
-def tool_sales_lost_to_other_sellers(prompt: str) -> str:
+def tool_sales_lost_to_other_sellers(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """
     Show total sales lost to other sellers for last week.
     Examples: 'Show the total sales lost to other sellers last week'.
@@ -1860,7 +2255,7 @@ def tool_sales_lost_to_other_sellers(prompt: str) -> str:
     return "ok"
 
 
-def tool_profit_lost_to_other_sellers(prompt: str) -> str:
+def tool_profit_lost_to_other_sellers(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """
     Show total gross profit lost to other sellers for last week.
     Examples: 'Show the total gross profit lost to other sellers last week'.
@@ -1935,7 +2330,7 @@ def tool_profit_lost_to_other_sellers(prompt: str) -> str:
             a = str(row.get("ASIN", "")).upper().strip()
             if not a:
                 continue
-            raw = str(row.get("Gross Margin", "")).strip().rstrip("%").replace(",", "")
+            raw = str(row.get("Profit- Gross Margin", "")).strip().rstrip("%").replace(",", "")
             try:
                 num = float(raw)
             except Exception:
@@ -2117,7 +2512,7 @@ def tool_profit_lost_to_other_sellers(prompt: str) -> str:
 
 
 
-def tool_gross_margin_underperformers(_: str) -> str:
+def tool_gross_margin_underperformers(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """
     Show ASINs with gross margin less than plan.
     Examples: 'Show ASINs with gross margin less than plan'.
@@ -2181,7 +2576,7 @@ def tool_gross_margin_underperformers(_: str) -> str:
     except Exception as e:
         return f"Error processing gross margin underperformers: {str(e)}"
 
-def tool_gross_profit_for_all_asins(_: str) -> str:
+def tool_gross_profit_for_all_asins(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """
     Show gross profit for all ASINs.
     Examples: 'Show gross profit for all ASINs'.
@@ -2218,7 +2613,7 @@ def tool_gross_profit_for_all_asins(_: str) -> str:
     except Exception as e:
         return f"Error processing gross profit for all ASINs: {str(e)}"
 
-def tool_gross_profit_for_all_brands(_: str) -> str:
+def tool_gross_profit_for_all_brands(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """
     Show gross profit for all brands.
     Examples: 'Show gross profit for all brands'.
@@ -2252,15 +2647,34 @@ def tool_gross_profit_for_all_brands(_: str) -> str:
     except Exception as e:
         return f"Error processing gross profit for all brands: {str(e)}"
 
-def tool_gross_margin_for_all_asins(_: str) -> str:
+def tool_gross_margin_for_all_asins(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """
     Show gross margin for all ASINs.
     Examples: 'Show gross margin for all ASINs'.
-    Saves formatted string in session_state['gm_all_asins_string'].
+    Returns formatted string with gross margin percentage.
     """
     try:
-        # Use the exact same logic as chatbotv10.py for gross profit
-        # 1) Clean & convert your columns
+        # Find the ASIN aggregated report using smart detection
+        asin_file = _smart_find_asin_report(dataframes, company_name)
+        if not asin_file:
+            available_files = list(dataframes.keys())
+            return f"Required ASIN aggregated report not found. Available files: {available_files}. Need file with pattern 'full_detailed_aggregated_report_{company_name or 'your_company'}.xlsx'."
+        
+        asin_df = dataframes[asin_file].copy()
+        
+        # Use the exact same logic as goodtools.py for gross margin
+        # 1) Drop trailing total row if present (exactly like chatbot)
+        asin_df = asin_df.drop(asin_df.tail(1).index)
+        
+        # 2) Convert "quantity" to float (exactly like chatbot)
+        asin_df["quantity"] = (
+            asin_df["quantity"]
+              .astype(str)
+              .str.replace(",", "")
+              .astype(float)
+        )
+        
+        # 3) Clean & convert your columns (exactly like goodtools.py)
         gp_series = pd.to_numeric(
             asin_df["Gross Profit"].astype(str)
                   .str.replace(r"[\$,]", "", regex=True),
@@ -2272,13 +2686,6 @@ def tool_gross_margin_for_all_asins(_: str) -> str:
         df = asin_df.copy()
         df['Gross Profit'] = gp_series
         df['quantity'] = qty_series
-        
-        # Calculate gross margin percentage (if we have the data)
-        if 'Gross Margin %' in df.columns:
-            df['Gross Margin %'] = pd.to_numeric(df['Gross Margin %'], errors='coerce').fillna(0)
-        else:
-            # Calculate margin as percentage of ATS (this is a simplified calculation)
-            df['Gross Margin %'] = 0.0  # Default if no margin data
         
         # Calculate overall gross margin percentage (weighted average)
         total_gp = gp_series.sum()
@@ -2293,24 +2700,52 @@ def tool_gross_margin_for_all_asins(_: str) -> str:
         # Format the margin percentage
         formatted_margin = f"{overall_margin:.2f}%"
         
-        # Create formatted string
-        formatted_string = f"The overall gross margin for all ASINs was {formatted_margin} in the settlement period {settlement_period}."
+        # Get settlement period
+        settlement_period = _calculate_settlement_period(dataframes, company_name)
         
+        # Create formatted string
+        formatted_string = (
+            f"The overall gross margin for all ASINs was {formatted_margin} "
+            f"in the settlement period {settlement_period}."
+        )
+        
+        # Store in session state for display
         st.session_state["gm_all_asins_string"] = formatted_string
+        st.session_state["gm_all_asins_period"] = settlement_period
+        
         return "ok"
         
     except Exception as e:
         return f"Error processing gross margin for all ASINs: {str(e)}"
 
-def tool_gross_margin_for_all_brands(_: str) -> str:
+def tool_gross_margin_for_all_brands(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """
     Show gross margin for all brands.
     Examples: 'Show gross margin for all brands'.
-    Saves formatted string in session_state['gm_all_brands_string'].
+    Returns formatted string with gross margin percentage.
     """
     try:
-        # Use the exact same logic as chatbotv10.py for gross profit
-        # 1) Clean & convert your columns
+        # Find the ASIN aggregated report using smart detection
+        asin_file = _smart_find_asin_report(dataframes, company_name)
+        if not asin_file:
+            available_files = list(dataframes.keys())
+            return f"Required ASIN aggregated report not found. Available files: {available_files}. Need file with pattern 'full_detailed_aggregated_report_{company_name or 'your_company'}.xlsx'."
+        
+        asin_df = dataframes[asin_file].copy()
+        
+        # Use the exact same logic as goodtools.py for gross margin
+        # 1) Drop trailing total row if present (exactly like chatbot)
+        asin_df = asin_df.drop(asin_df.tail(1).index)
+        
+        # 2) Convert "quantity" to float (exactly like chatbot)
+        asin_df["quantity"] = (
+            asin_df["quantity"]
+              .astype(str)
+              .str.replace(",", "")
+              .astype(float)
+        )
+        
+        # 3) Clean & convert your columns (exactly like goodtools.py)
         gp_series = pd.to_numeric(
             asin_df["Gross Profit"].astype(str)
                   .str.replace(r"[\$,]", "", regex=True),
@@ -2322,13 +2757,6 @@ def tool_gross_margin_for_all_brands(_: str) -> str:
         df = asin_df.copy()
         df['Gross Profit'] = gp_series
         df['quantity'] = qty_series
-        
-        # Calculate gross margin percentage (if we have the data)
-        if 'Gross Margin %' in df.columns:
-            df['Gross Margin %'] = pd.to_numeric(df['Gross Margin %'], errors='coerce').fillna(0)
-        else:
-            # Calculate margin as percentage of ATS (this is a simplified calculation)
-            df['Gross Margin %'] = 0.0  # Default if no margin data
         
         # Calculate overall gross margin percentage (weighted average)
         total_gp = gp_series.sum()
@@ -2343,17 +2771,26 @@ def tool_gross_margin_for_all_brands(_: str) -> str:
         # Format the margin percentage
         formatted_margin = f"{overall_margin:.2f}%"
         
-        # Create formatted string
-        formatted_string = f"The overall gross margin for all brands was {formatted_margin} in the settlement period {settlement_period}."
+        # Get settlement period
+        settlement_period = _calculate_settlement_period(dataframes, company_name)
         
+        # Create formatted string
+        formatted_string = (
+            f"The overall gross margin for all brands was {formatted_margin} "
+            f"in the settlement period {settlement_period}."
+        )
+        
+        # Store in session state for display
         st.session_state["gm_all_brands_string"] = formatted_string
+        st.session_state["gm_all_brands_period"] = settlement_period
+        
         return "ok"
         
     except Exception as e:
         return f"Error processing gross margin for all brands: {str(e)}"
 
 
-def tool_sales_descending_order(_: str) -> str:
+def tool_sales_descending_order(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """
     Show ASINs sales in descending order.
     Examples: 'Show ASINs sales in descending order'.
@@ -2397,7 +2834,7 @@ def tool_sales_descending_order(_: str) -> str:
     return "ok"
 
 
-def tool_gross_profit_descending_order(_: str) -> str:
+def tool_gross_profit_descending_order(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """
     Show ASINs gross profit in descending order.
     Examples: 'Show ASINs gross profit in descending order'.
@@ -2441,7 +2878,7 @@ def tool_gross_profit_descending_order(_: str) -> str:
     return "ok"
 
 
-def tool_gross_margin_descending_order(_: str) -> str:
+def tool_gross_margin_descending_order(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """
     Show ASINs gross margin in descending order.
     Examples: 'Show ASINs gross margin in descending order'.
@@ -2478,7 +2915,7 @@ def tool_gross_margin_descending_order(_: str) -> str:
     return "ok"
 
 
-def tool_brands_sales_descending_order(_: str) -> str:
+def tool_brands_sales_descending_order(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """
     Show brands sales in descending order.
     Examples: 'Show brands sales in descending order'.
@@ -2531,7 +2968,7 @@ def tool_brands_sales_descending_order(_: str) -> str:
     return "ok"
 
 
-def tool_brands_gross_profit_descending_order(_: str) -> str:
+def tool_brands_gross_profit_descending_order(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """
     Show brands gross profit in descending order.
     Examples: 'Show brands gross profit in descending order'.
@@ -2572,7 +3009,7 @@ def tool_brands_gross_profit_descending_order(_: str) -> str:
     return "ok"
 
 
-def tool_brands_gross_margin_descending_order(_: str) -> str:
+def tool_brands_gross_margin_descending_order(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """
     Show brands gross margin in descending order.
     Examples: 'Show brands gross margin in descending order'.
@@ -2616,7 +3053,7 @@ def tool_brands_gross_margin_descending_order(_: str) -> str:
     return "ok"
 
 
-def tool_top_brands_sales(prompt: str) -> str:
+def tool_top_brands_sales(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """
     Show top X brands sales in descending order.
     Examples: 'Show top 5 brands sales in descending order'.
@@ -2680,7 +3117,7 @@ def tool_top_brands_sales(prompt: str) -> str:
     return "ok"
 
 
-def tool_top_asins_sales(prompt: str) -> str:
+def tool_top_asins_sales(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """
     Show top X ASINs sales in descending order.
     Examples: 'Show top 10 ASINs sales in descending order'.
@@ -2738,7 +3175,7 @@ def tool_top_asins_sales(prompt: str) -> str:
     return "ok"
 
 
-def tool_fees_higher_than_plan(_: str) -> str:
+def tool_fees_higher_than_plan(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """Show ASINs with average total fees higher than plan."""
     try:
         # Load the data
@@ -2804,33 +3241,84 @@ def tool_fees_higher_than_plan(_: str) -> str:
         return "error"
 
 
-def tool_units_sold_for_specific_asin(prompt: str) -> str:
+def tool_units_sold_for_specific_asin(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """Show units sold for a specific ASIN."""
     try:
         # Extract ASIN from prompt
         asin_match = re.search(r'\b(B0[0-9A-Z]{8})\b', prompt.upper())
         if not asin_match:
-            st.session_state["agent_error"] = "No valid ASIN found in the prompt. Please provide an ASIN in B0XXXXXXXX format."
+            st.session_state["agent_error"] = "Invalid ASIN."
             return "error"
         
-        asin = asin_match.group(1)
+        asin_q = asin_match.group(1)
         
-        # Load the data
-        asin_df = pd.read_excel(ASIN_REPORT_PATH)
+        # Find ASIN report using smart detection
+        asin_report = _smart_find_asin_report(dataframes, company_name)
+        if not asin_report:
+            st.session_state["agent_error"] = "Could not find ASIN aggregated report file."
+            return "error"
         
-        # Use global settlement period
+        asin_df = dataframes[asin_report]
+        
+        # "did you mean?" fallback
+        all_asins = asin_df["ASIN"].astype(str).str.upper().tolist()
+        print(f"DEBUG: Looking for ASIN: {asin_q}")
+        print(f"DEBUG: Total ASINs in data: {len(all_asins)}")
+        print(f"DEBUG: First 5 ASINs: {all_asins[:5]}")
+        
+        if asin_q not in all_asins:
+            import difflib
+            suggestion = difflib.get_close_matches(asin_q, all_asins, n=1, cutoff=0.6)
+            print(f"DEBUG: Closest match suggestion: {suggestion}")
+            if suggestion:
+                asin_q = suggestion[0]
+                print(f"DEBUG: Using closest match: {asin_q}")
+            else:
+                # Try with lower cutoff
+                suggestion = difflib.get_close_matches(asin_q, all_asins, n=1, cutoff=0.3)
+                print(f"DEBUG: Lower cutoff suggestion: {suggestion}")
+                if suggestion:
+                    asin_q = suggestion[0]
+                    print(f"DEBUG: Using lower cutoff match: {asin_q}")
+                else:
+                    # Show available ASINs for debugging
+                    print(f"DEBUG: No close match found. Available ASINs: {all_asins[:10]}")
+                    # Try to find any match with very low cutoff
+                    suggestion = difflib.get_close_matches(asin_q, all_asins, n=3, cutoff=0.1)
+                    if suggestion:
+                        st.session_state["agent_error"] = f"Invalid ASIN {asin_q}. Did you mean: {', '.join(suggestion)}?"
+                    else:
+                        st.session_state["agent_error"] = f"Invalid ASIN {asin_q}. No similar ASINs found."
+                    return "error"
         
         # Find the ASIN
-        row = asin_df[asin_df["ASIN"] == asin]
+        row = asin_df[asin_df["ASIN"] == asin_q]
         if row.empty:
-            st.session_state["agent_error"] = f"ASIN {asin} not found in the data."
+            st.session_state["agent_error"] = f"Invalid ASIN {asin_q}."
             return "error"
         
-        # Get units sold
-        units = int(row["quantity"].iloc[0])
+        # Get units sold - use robust type checking like goodtools.py
+        raw_quantity = row["quantity"].iloc[0]
+        
+        # Handle different data types robustly
+        try:
+            if isinstance(raw_quantity, str):
+                # Remove commas and convert to int
+                units = int(raw_quantity.replace(",", ""))
+            elif isinstance(raw_quantity, (int, float)):
+                units = int(raw_quantity)
+            else:
+                # Try to convert to string first
+                units = int(str(raw_quantity).replace(",", ""))
+        except Exception as qty_error:
+            st.session_state["agent_error"] = f"Error extracting quantity for ASIN {asin_q}: {str(qty_error)}"
+            return "error"
+        
+        # Calculate settlement period from the dataframes
+        settlement_period = _calculate_settlement_period(dataframes, company_name)
         
         # Store the result
-        st.session_state["units_sold_asin"] = asin
+        st.session_state["units_sold_asin"] = asin_q
         st.session_state["units_sold_count"] = units
         st.session_state["units_sold_period"] = settlement_period
         
@@ -2841,35 +3329,66 @@ def tool_units_sold_for_specific_asin(prompt: str) -> str:
         return "error"
 
 
-def tool_sales_for_specific_asin(prompt: str) -> str:
+def tool_sales_for_specific_asin(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """Show sales for a specific ASIN."""
     try:
         # Extract ASIN from prompt
         asin_match = re.search(r'\b(B0[0-9A-Z]{8})\b', prompt.upper())
         if not asin_match:
-            st.session_state["agent_error"] = "No valid ASIN found in the prompt. Please provide an ASIN in B0XXXXXXXX format."
+            st.session_state["agent_error"] = "Invalid ASIN."
             return "error"
         
-        asin = asin_match.group(1)
+        asin_q = asin_match.group(1)
         
-        # Load the data
-        asin_df = pd.read_excel(ASIN_REPORT_PATH)
+        # Find ASIN report using smart detection
+        asin_report = _smart_find_asin_report(dataframes, company_name)
+        if not asin_report:
+            st.session_state["agent_error"] = "Could not find ASIN aggregated report file."
+            return "error"
         
-        # Use global settlement period
+        asin_df = dataframes[asin_report]
+        
+        # "did you mean?" fallback
+        all_asins = asin_df["ASIN"].astype(str).str.upper().tolist()
+        if asin_q not in all_asins:
+            import difflib
+            suggestion = difflib.get_close_matches(asin_q, all_asins, n=1, cutoff=0.6)
+            if suggestion:
+                asin_q = suggestion[0]
+            else:
+                st.session_state["agent_error"] = f"Invalid ASIN {asin_q}."
+                return "error"
         
         # Find the ASIN
-        row = asin_df[asin_df["ASIN"] == asin]
+        row = asin_df[asin_df["ASIN"] == asin_q]
         if row.empty:
-            st.session_state["agent_error"] = f"ASIN {asin} not found in the data."
+            st.session_state["agent_error"] = f"Invalid ASIN {asin_q}."
             return "error"
         
         # Get sales and units
         raw_sales = row["Amazon Top-line Sales (ATS)"].iloc[0]
         sales_num = float(str(raw_sales).replace("$","").replace(",",""))
-        units = int(row["quantity"].iloc[0])
+        
+        # Get units - use robust type checking like goodtools.py
+        raw_quantity = row["quantity"].iloc[0]
+        try:
+            if isinstance(raw_quantity, str):
+                # Remove commas and convert to int
+                units = int(raw_quantity.replace(",", ""))
+            elif isinstance(raw_quantity, (int, float)):
+                units = int(raw_quantity)
+            else:
+                # Try to convert to string first
+                units = int(str(raw_quantity).replace(",", ""))
+        except Exception as qty_error:
+            st.session_state["agent_error"] = f"Error extracting quantity for ASIN {asin_q}: {str(qty_error)}"
+            return "error"
+        
+        # Calculate settlement period from the dataframes
+        settlement_period = _calculate_settlement_period(dataframes, company_name)
         
         # Store the result
-        st.session_state["sales_asin"] = asin
+        st.session_state["sales_asin"] = asin_q
         st.session_state["sales_amount"] = sales_num
         st.session_state["sales_units"] = units
         st.session_state["sales_period"] = settlement_period
@@ -2881,26 +3400,40 @@ def tool_sales_for_specific_asin(prompt: str) -> str:
         return "error"
 
 
-def tool_total_fees_for_specific_asin(prompt: str) -> str:
+def tool_total_fees_for_specific_asin(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """Show total fees for a specific ASIN."""
     try:
         # Extract ASIN from prompt
         asin_match = re.search(r'\b(B0[0-9A-Z]{8})\b', prompt.upper())
         if not asin_match:
-            st.session_state["agent_error"] = "No valid ASIN found in the prompt. Please provide an ASIN in B0XXXXXXXX format."
+            st.session_state["agent_error"] = "Invalid ASIN."
             return "error"
         
-        asin = asin_match.group(1)
+        asin_q = asin_match.group(1)
         
-        # Load the data
-        asin_df = pd.read_excel(ASIN_REPORT_PATH)
+        # Find ASIN report using smart detection
+        asin_report = _smart_find_asin_report(dataframes, company_name)
+        if not asin_report:
+            st.session_state["agent_error"] = "Could not find ASIN aggregated report file."
+            return "error"
         
-        # Use global settlement period
+        asin_df = dataframes[asin_report]
+        
+        # "did you mean?" fallback
+        all_asins = asin_df["ASIN"].astype(str).str.upper().tolist()
+        if asin_q not in all_asins:
+            import difflib
+            suggestion = difflib.get_close_matches(asin_q, all_asins, n=1, cutoff=0.6)
+            if suggestion:
+                asin_q = suggestion[0]
+            else:
+                st.session_state["agent_error"] = f"Invalid ASIN {asin_q}."
+                return "error"
         
         # Find the ASIN
-        row = asin_df[asin_df["ASIN"] == asin]
+        row = asin_df[asin_df["ASIN"] == asin_q]
         if row.empty:
-            st.session_state["agent_error"] = f"ASIN {asin} not found in the data."
+            st.session_state["agent_error"] = f"Invalid ASIN {asin_q}."
             return "error"
         
         # Calculate total fees
@@ -2919,11 +3452,26 @@ def tool_total_fees_for_specific_asin(prompt: str) -> str:
                 except:
                     pass
         
-        units = int(row["quantity"].iloc[0])
+        # Get units - use robust type checking like goodtools.py
+        raw_quantity = row["quantity"].iloc[0]
+        try:
+            if isinstance(raw_quantity, str):
+                units = int(raw_quantity.replace(",", ""))
+            elif isinstance(raw_quantity, (int, float)):
+                units = int(raw_quantity)
+            else:
+                units = int(str(raw_quantity).replace(",", ""))
+        except Exception as qty_error:
+            st.session_state["agent_error"] = f"Error extracting quantity for ASIN {asin_q}: {str(qty_error)}"
+            return "error"
+        
         per_unit_fees = total_fees / units if units else 0.0
         
+        # Calculate settlement period from the dataframes
+        settlement_period = _calculate_settlement_period(dataframes, company_name)
+        
         # Store the result
-        st.session_state["fees_asin"] = asin
+        st.session_state["fees_asin"] = asin_q
         st.session_state["fees_total"] = total_fees
         st.session_state["fees_per_unit"] = per_unit_fees
         st.session_state["fees_period"] = settlement_period
@@ -2935,36 +3483,65 @@ def tool_total_fees_for_specific_asin(prompt: str) -> str:
         return "error"
 
 
-def tool_gross_profit_for_specific_asin(prompt: str) -> str:
+def tool_gross_profit_for_specific_asin(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """Show gross profit for a specific ASIN."""
     try:
         # Extract ASIN from prompt
         asin_match = re.search(r'\b(B0[0-9A-Z]{8})\b', prompt.upper())
         if not asin_match:
-            st.session_state["agent_error"] = "No valid ASIN found in the prompt. Please provide an ASIN in B0XXXXXXXX format."
+            st.session_state["agent_error"] = "Invalid ASIN."
             return "error"
         
-        asin = asin_match.group(1)
+        asin_q = asin_match.group(1)
         
-        # Load the data
-        asin_df = pd.read_excel(ASIN_REPORT_PATH)
+        # Find ASIN report using smart detection
+        asin_report = _smart_find_asin_report(dataframes, company_name)
+        if not asin_report:
+            st.session_state["agent_error"] = "Could not find ASIN aggregated report file."
+            return "error"
         
-        # Use global settlement period
+        asin_df = dataframes[asin_report]
+        
+        # "did you mean?" fallback
+        all_asins = asin_df["ASIN"].astype(str).str.upper().tolist()
+        if asin_q not in all_asins:
+            import difflib
+            suggestion = difflib.get_close_matches(asin_q, all_asins, n=1, cutoff=0.6)
+            if suggestion:
+                asin_q = suggestion[0]
+            else:
+                st.session_state["agent_error"] = f"Invalid ASIN {asin_q}."
+                return "error"
         
         # Find the ASIN
-        row = asin_df[asin_df["ASIN"] == asin]
+        row = asin_df[asin_df["ASIN"] == asin_q]
         if row.empty:
-            st.session_state["agent_error"] = f"ASIN {asin} not found in the data."
+            st.session_state["agent_error"] = f"Invalid ASIN {asin_q}."
             return "error"
         
         # Get gross profit and units
         raw_gp = row["Gross Profit"].iloc[0]
         gp_num = float(str(raw_gp).replace("$","").replace(",",""))
-        units = int(row["quantity"].iloc[0])
+        # Get units - use robust type checking like goodtools.py
+        raw_quantity = row["quantity"].iloc[0]
+        try:
+            if isinstance(raw_quantity, str):
+                units = int(raw_quantity.replace(",", ""))
+            elif isinstance(raw_quantity, (int, float)):
+                units = int(raw_quantity)
+            else:
+                units = int(str(raw_quantity).replace(",", ""))
+        except Exception as qty_error:
+            st.session_state["agent_error"] = f"Error extracting quantity for ASIN {asin_q}: {str(qty_error)}"
+            return "error"
+        
         per_unit_gp = gp_num / units if units else 0.0
         
+        # Calculate settlement period from the dataframes
+        settlement_period = _calculate_settlement_period(dataframes, company_name)
+        
         # Store the result
-        st.session_state["gp_asin"] = asin
+        st.session_state["gp_asin"] = asin_q
         st.session_state["gp_amount"] = gp_num
         st.session_state["gp_per_unit"] = per_unit_gp
         st.session_state["gp_period"] = settlement_period
@@ -2976,26 +3553,40 @@ def tool_gross_profit_for_specific_asin(prompt: str) -> str:
         return "error"
 
 
-def tool_gross_margin_for_specific_asin(prompt: str) -> str:
+def tool_gross_margin_for_specific_asin(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """Show gross margin for a specific ASIN."""
     try:
         # Extract ASIN from prompt
         asin_match = re.search(r'\b(B0[0-9A-Z]{8})\b', prompt.upper())
         if not asin_match:
-            st.session_state["agent_error"] = "No valid ASIN found in the prompt. Please provide an ASIN in B0XXXXXXXX format."
+            st.session_state["agent_error"] = "Invalid ASIN."
             return "error"
         
-        asin = asin_match.group(1)
+        asin_q = asin_match.group(1)
         
-        # Load the data
-        asin_df = pd.read_excel(ASIN_REPORT_PATH)
+        # Find ASIN report using smart detection
+        asin_report = _smart_find_asin_report(dataframes, company_name)
+        if not asin_report:
+            st.session_state["agent_error"] = "Could not find ASIN aggregated report file."
+            return "error"
         
-        # Use global settlement period
+        asin_df = dataframes[asin_report]
+        
+        # "did you mean?" fallback
+        all_asins = asin_df["ASIN"].astype(str).str.upper().tolist()
+        if asin_q not in all_asins:
+            import difflib
+            suggestion = difflib.get_close_matches(asin_q, all_asins, n=1, cutoff=0.6)
+            if suggestion:
+                asin_q = suggestion[0]
+            else:
+                st.session_state["agent_error"] = f"Invalid ASIN {asin_q}."
+                return "error"
         
         # Find the ASIN
-        row = asin_df[asin_df["ASIN"] == asin]
+        row = asin_df[asin_df["ASIN"] == asin_q]
         if row.empty:
-            st.session_state["agent_error"] = f"ASIN {asin} not found in the data."
+            st.session_state["agent_error"] = f"Invalid ASIN {asin_q}."
             return "error"
         
         # Get gross margin
@@ -3008,8 +3599,11 @@ def tool_gross_margin_for_specific_asin(prompt: str) -> str:
         except:
             margin_str = str(raw_margin)
         
+        # Calculate settlement period from the dataframes
+        settlement_period = _calculate_settlement_period(dataframes, company_name)
+        
         # Store the result
-        st.session_state["gm_asin"] = asin
+        st.session_state["gm_asin"] = asin_q
         st.session_state["gm_margin"] = margin_str
         st.session_state["gm_period"] = settlement_period
         
@@ -3020,7 +3614,7 @@ def tool_gross_margin_for_specific_asin(prompt: str) -> str:
         return "error"
 
 
-def tool_top_brands_gross_profit(prompt: str) -> str:
+def tool_top_brands_gross_profit(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """
     Show top X brands gross profit in descending order.
     Examples: 'Show top 5 brands gross profit in descending order'.
@@ -3081,7 +3675,7 @@ def tool_top_brands_gross_profit(prompt: str) -> str:
     return "ok"
 
 
-def tool_top_brands_gross_margin(prompt: str) -> str:
+def tool_top_brands_gross_margin(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """
     Show top X brands gross margin in descending order.
     Examples: 'Show top 5 brands gross margin in descending order'.
@@ -3142,7 +3736,7 @@ def tool_top_brands_gross_margin(prompt: str) -> str:
     return "ok"
 
 
-def tool_top_asins_gross_profit(prompt: str) -> str:
+def tool_top_asins_gross_profit(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """
     Show top X ASINs gross profit in descending order.
     Examples: 'Show top 10 ASINs gross profit in descending order'.
@@ -3200,7 +3794,7 @@ def tool_top_asins_gross_profit(prompt: str) -> str:
     return "ok"
 
 
-def tool_top_asins_gross_margin(prompt: str) -> str:
+def tool_top_asins_gross_margin(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """
     Show top X ASINs gross margin in descending order.
     Examples: 'Show top 10 ASINs gross margin in descending order'.
@@ -3258,7 +3852,7 @@ def tool_top_asins_gross_margin(prompt: str) -> str:
     return "ok"
 
 
-def tool_total_sales_gross_profit_margin_brands(_: str) -> str:
+def tool_total_sales_gross_profit_margin_brands(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """
     Show total sales, gross profit, and margin for all brands.
     Examples: 'Show total sales, gross profit, and margin for all brands'.
@@ -3325,7 +3919,7 @@ def tool_total_sales_gross_profit_margin_brands(_: str) -> str:
     return "ok"
 
 
-def tool_orders_sales_price_lower_plan(_: str) -> str:
+def tool_orders_sales_price_lower_plan(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """
     Show orders where the sales price was lower than plan for ASIN XYZ.
     Examples: 'Show orders where the sales price was lower than plan for ASIN B0XXXXXXXX'.
@@ -3352,7 +3946,7 @@ def tool_orders_sales_price_lower_plan(_: str) -> str:
     return "ok"
 
 
-def tool_asins_avg_price_lower_plan(_: str) -> str:
+def tool_asins_avg_price_lower_plan(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """
     Show ASINs where the average sales price was lower than plan.
     Examples: 'Show ASINs where the average sales price was lower than plan'.
@@ -3379,46 +3973,86 @@ def tool_asins_avg_price_lower_plan(_: str) -> str:
     return "ok"
 
 
-def tool_asins_fees_higher_plan(_: str) -> str:
+def tool_asins_fees_higher_plan(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """
     Show ASINs with average total fees higher than plan for the last settlement period.
     Examples: 'Show ASINs with average total fees higher than plan for the last settlement period'.
     Saves formatted string and table in session_state['asins_fees_higher_string'] and 'asins_fees_higher_table'].
     """
     try:
-        # 1) load your fee‑per‑unit underperformers
-        fees_df = pd.read_excel(
-            "Fees_PerUnit_Underperformers.xlsx",
-            sheet_name="Fee_Per_Unit_Under"
-        )
-
-        # 2) strip $ and commas, then convert to numeric
+        # 1) Load the fees per unit underperformers file using smart detection
+        fees_file = _smart_find_fees_underperformers(dataframes, company_name)
+        
+        if not fees_file:
+            available_files = list(dataframes.keys())
+            return f"Required fees underperformers file not found. Available files: {available_files}. Need file with pattern 'Fees_PerUnit_Underperformers_{company_name or 'your_company'}.xlsx'."
+        
+        print(f"DEBUG: Loading fees data from {fees_file}")
+        try:
+            # Use the data that's already loaded in dataframes
+            fees_df = dataframes[fees_file].copy()
+            print(f"DEBUG: Loaded fees data with {len(fees_df)} rows")
+            print(f"DEBUG: Fees columns: {list(fees_df.columns)}")
+        except Exception as e:
+            print(f"DEBUG: Error loading fees data: {e}")
+            return f"Error loading fees data from {fees_file}: {str(e)}"
+        
+        # 2) Strip $ and commas, then convert to numeric (like goodtools.py)
         for col in ("Actual Fees per Unit", "Expected Fees per Unit"):
-            fees_df[col] = (
-                fees_df[col]
-                  .astype(str)
-                  .str.replace(r"[\$,]", "", regex=True)
-                  .astype(float)
+            if col in fees_df.columns:
+                fees_df[col] = (
+                    fees_df[col]
+                      .astype(str)
+                      .str.replace(r"[\$,]", "", regex=True)
+                      .astype(float)
+                )
+
+        # 3) Load ASIN data to get Brand & Units Sold using smart detection
+        asin_file = _smart_find_asin_report(dataframes, company_name)
+        if not asin_file:
+            available_files = list(dataframes.keys())
+            return f"Required ASIN aggregated report not found. Available files: {available_files}. Need file with pattern 'full_detailed_aggregated_report_{company_name or 'your_company'}.xlsx'."
+        
+        print(f"DEBUG: Loading ASIN data from {asin_file}")
+        try:
+            # Use the data that's already loaded in dataframes
+            asin_df = dataframes[asin_file].copy()
+            # Drop trailing total row if present (like goodtools.py)
+            asin_df = asin_df.drop(asin_df.tail(1).index)
+            
+            # Convert "quantity" to float (like goodtools.py)
+            if 'quantity' in asin_df.columns:
+                asin_df['quantity'] = (
+                    asin_df['quantity']
+                    .astype(str)
+                    .str.replace(",", "")
+                    .astype(float)
+                )
+            
+            print(f"DEBUG: Loaded ASIN data with {len(asin_df)} rows")
+            print(f"DEBUG: ASIN columns: {list(asin_df.columns)}")
+            
+            # 4) Pull in Brand & Units Sold from asin_df (like goodtools.py)
+            brand_map = asin_df.set_index(
+                asin_df["ASIN"].str.upper()
+            )["Brands"].to_dict()
+            qty_map = asin_df.set_index(
+                asin_df["ASIN"].str.upper()
+            )["quantity"].to_dict()
+
+            fees_df["Brand"] = fees_df["ASIN"].str.upper().map(brand_map).fillna("Unknown")
+            fees_df["Units Sold"] = (
+                fees_df["ASIN"]
+                  .str.upper()
+                  .map(qty_map)
+                  .fillna(0)
+                  .astype(int)
             )
+        except Exception as e:
+            print(f"DEBUG: Error loading ASIN data: {e}")
+            return f"Error loading ASIN data from {asin_file}: {str(e)}"
 
-        # 3) pull in Brand & Units Sold from asin_df
-        brand_map = asin_df.set_index(
-            asin_df["ASIN"].str.upper()
-        )["Brands"].to_dict()
-        qty_map = asin_df.set_index(
-            asin_df["ASIN"].str.upper()
-        )["quantity"].to_dict()
-
-        fees_df["Brand"] = fees_df["ASIN"].str.upper().map(brand_map).fillna("Unknown")
-        fees_df["Units Sold"] = (
-            fees_df["ASIN"]
-              .str.upper()
-              .map(qty_map)
-              .fillna(0)
-              .astype(int)
-        )
-
-        # 4) compute numeric delta, ROUND it to 2 decimals, then multiply
+        # 5) Compute numeric delta, ROUND it to 2 decimals, then multiply (like goodtools.py)
         fees_df["Delta_num"] = (
             fees_df["Actual Fees per Unit"]
             - fees_df["Expected Fees per Unit"]
@@ -3427,7 +4061,7 @@ def tool_asins_fees_higher_plan(_: str) -> str:
             fees_df["Delta_num"] * fees_df["Units Sold"]
         ).round(2)
 
-        # 5) build final report and 1‑based index
+        # 6) Build final report and 1‑based index (like goodtools.py)
         report = fees_df[[
             "Brand",
             "ASIN",
@@ -3440,7 +4074,7 @@ def tool_asins_fees_higher_plan(_: str) -> str:
         report.index = range(1, len(report) + 1)
         report.index.name = "No."
 
-        # 6) format back to dollars and rename
+        # 7) Format back to dollars and rename (like goodtools.py)
         report = report.rename(columns={
             "Actual Fees per Unit":   "Actual Fees",
             "Expected Fees per Unit": "Planned Fees",
@@ -3455,10 +4089,13 @@ def tool_asins_fees_higher_plan(_: str) -> str:
         ):
             report[col] = report[col].map("${:,.2f}".format)
 
-        # 7) Create formatted string
+        # 8) Calculate settlement period from the dataframes
+        settlement_period = _calculate_settlement_period(dataframes, company_name)
+        
+        # 9) Create formatted string
         formatted_string = f"Here are all ASINs where the total fees were higher than planned for the settlement period {settlement_period}:"
 
-        # 8) Save for UI
+        # 10) Save for UI
         st.session_state["asins_fees_higher_string"] = formatted_string
         st.session_state["asins_fees_higher_table"] = report
         st.session_state["asins_fees_higher_period"] = settlement_period
@@ -3469,7 +4106,7 @@ def tool_asins_fees_higher_plan(_: str) -> str:
         return "error"
 
 
-def tool_orders_fees_higher_plan(prompt: str) -> str:
+def tool_orders_fees_higher_plan(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """
     Show orders where fees were higher than plan for ASIN XYZ.
     Examples: 'Show orders where fees were higher than plan for ASIN B0XXXXXXXX'.
@@ -3525,12 +4162,12 @@ def tool_orders_fees_higher_plan(prompt: str) -> str:
 
         # 4) Planned fees per unit (ensure numeric)
         df = df.merge(
-            unit_df[["ASIN", "Referral Fee", "TOTAL FBA Fulfillment Fee"]],
+            unit_df[["ASIN", "FBA Referral Fee", "TOTAL FBA Fulfillment Fee"]],
             on="ASIN",
             how="left",
         ).rename(
             columns={
-                "Referral Fee": "Plan Referral Fee",
+                "FBA Referral Fee": "Plan Referral Fee",
                 "TOTAL FBA Fulfillment Fee": "Plan FBA Fee",
             }
         )
@@ -3627,7 +4264,7 @@ def tool_orders_fees_higher_plan(prompt: str) -> str:
         return "error"
 
 
-def tool_orders_referral_fees_higher_plan(prompt: str) -> str:
+def tool_orders_referral_fees_higher_plan(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """
     Show orders where referral fees were higher than plan for ASIN XYZ.
     Examples: 'Show orders where referral fees were higher than plan for ASIN B0XXXXXXXX'.
@@ -3731,18 +4368,18 @@ def tool_orders_referral_fees_higher_plan(prompt: str) -> str:
 
         # 8) Plan referral fee (1 row per ASIN; choose a single numeric value)
         unit_plan = (
-            unit_df[["ASIN", "Referral Fee"]].copy()
+            unit_df[["ASIN", "FBA Referral Fee"]].copy()
             .assign(
                 ASIN=lambda d: d["ASIN"].astype(str).str.upper().str.strip(),
-                **{"Referral Fee": lambda d: pd.to_numeric(
-                    d["Referral Fee"].astype(str).str.replace(r"[^\d.\-]", "", regex=True),
+                **{"FBA Referral Fee": lambda d: pd.to_numeric(
+                    d["FBA Referral Fee"].astype(str).str.replace(r"[^\d.\-]", "", regex=True),
                     errors="coerce"
                 )}
             )
-            .dropna(subset=["Referral Fee"])
+            .dropna(subset=["FBA Referral Fee"])
             .drop_duplicates(subset="ASIN", keep="last")
         )
-        plan_ser = unit_plan.loc[unit_plan["ASIN"] == asin_q, "Referral Fee"]
+        plan_ser = unit_plan.loc[unit_plan["ASIN"] == asin_q, "FBA Referral Fee"]
         if plan_ser.empty:
             st.session_state["agent_error"] = f"No planned referral fee found for ASIN {asin_q}."
             return "error"
@@ -3793,7 +4430,7 @@ def tool_orders_referral_fees_higher_plan(prompt: str) -> str:
         return "error"
 
 
-def tool_orders_fulfillment_fees_higher_plan(user_text: str) -> str:
+def tool_orders_fulfillment_fees_higher_plan(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """
     Show orders where fulfillment fees were higher than plan for ASIN XYZ.
     Examples: 'Show orders where fulfillment fees were higher than plan for ASIN B0XXXXXXXX'.
@@ -3803,7 +4440,7 @@ def tool_orders_fulfillment_fees_higher_plan(user_text: str) -> str:
         # 1) Extract ASIN from prompt
         m_fba_orders = re.search(
             r"\bshow\s+orders\s+where\s+fulfillment\s+fees\s+were\s+higher\s+than\s+plan\s+for\s+asin\s+(B0[0-9A-Z]{8})\b",
-            user_text,
+            prompt,
             flags=re.IGNORECASE
         )
         if not m_fba_orders:
@@ -3920,7 +4557,7 @@ def tool_orders_fulfillment_fees_higher_plan(user_text: str) -> str:
         return "error"
 
 
-def tool_settlement_period_definition(prompt: str) -> str:
+def tool_settlement_period_definition(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """Provide definition of Amazon settlement period."""
     try:
         # Create the formatted definition string
@@ -3936,7 +4573,7 @@ def tool_settlement_period_definition(prompt: str) -> str:
         return "error"
 
 
-def tool_settlement_period_timing(prompt: str) -> str:
+def tool_settlement_period_timing(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """Provide timing information about settlement period."""
     try:
         # Create the formatted timing string
@@ -3952,7 +4589,7 @@ def tool_settlement_period_timing(prompt: str) -> str:
         return "error"
 
 
-def tool_settlement_period_reason(prompt: str) -> str:
+def tool_settlement_period_reason(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """Provide explanation for why settlement period has that specific date range."""
     try:
         # Create the formatted explanation string
@@ -3975,11 +4612,31 @@ from langchain_openai import ChatOpenAI
 from langchain.agents import Tool, create_tool_calling_agent, AgentExecutor
 from langchain.prompts import ChatPromptTemplate
 
+# Global dataframes dictionary for tool functions
+_global_dataframes = None
+_global_company_name = "ten_west"  # Default company name
+
+def _set_global_dataframes(dataframes: Dict[str, pd.DataFrame], company_name: str = "ten_west"):
+    """Set the global dataframes and company name for tool functions."""
+    global _global_dataframes, _global_company_name
+    _global_dataframes = dataframes
+    _global_company_name = company_name
+
+def _create_tool_wrapper(tool_func):
+    """Create a wrapper function that calls the tool with proper parameters."""
+    def wrapper(prompt: str) -> str:
+        if _global_dataframes is None:
+            # Build dataframes if not set
+            dataframes = _build_dataframes_dict()
+            _set_global_dataframes(dataframes)
+        return tool_func(_global_dataframes, prompt, _global_company_name)
+    return wrapper
+
 def build_agent() -> AgentExecutor:
     tools = [
         Tool(
             name="conversion_rates_for_asins",
-            func=tool_conversion_rates_for_asins,
+            func=_create_tool_wrapper(tool_conversion_rates_for_asins),
             description=(
                 "Use when the user asks to 'Show the Conversion Rates for my ASINs'. "
                 "Input: the full user prompt. Return 'ok' if table prepared."
@@ -3987,7 +4644,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="average_conversion_rate",
-            func=tool_average_conversion_rate,
+            func=_create_tool_wrapper(tool_average_conversion_rate),
             description=(
                 "Use when the user asks for an average conversion rate (e.g., 'Show my average Conversion Rate ...'). "
                 "Input: the full user prompt. Return 'ok' if value prepared."
@@ -3995,7 +4652,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="asins_avg_price_below_plan",
-            func=tool_asins_avg_price_below_plan,
+            func=_create_tool_wrapper(tool_asins_avg_price_below_plan),
             description=(
                 "Use ONLY when user asks for ASINs with AVERAGE sales price below plan (aggregated summary). "
                 "Synonyms for 'average sales price': average order value, AOV. "
@@ -4009,7 +4666,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="asins_where_avg_price_lower_than_plan",
-            func=tool_asins_where_avg_price_lower_than_plan,
+            func=_create_tool_wrapper(tool_asins_where_avg_price_lower_than_plan),
             description=(
                 "Use ONLY when user asks for ASINs where the AVERAGE sales price was lower than plan (aggregated summary). "
                 "Synonyms for 'average sales price': mean, average order value, AOV. "
@@ -4022,7 +4679,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="orders_below_plan_for_asin",
-            func=tool_orders_below_plan_for_asin,
+            func=_create_tool_wrapper(tool_orders_below_plan_for_asin),
             description=(
                 "PRIORITY: Use this tool when user asks for INDIVIDUAL ORDERS where sales price was lower than plan for a SPECIFIC ASIN. "
                 "Examples: 'Show orders where the sales price was lower than plan for ASIN B0XXXXXXXX', "
@@ -4034,7 +4691,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="gross_sales_by_asin",
-            func=tool_gross_sales_by_asin,
+            func=_create_tool_wrapper(tool_gross_sales_by_asin),
             description=(
                 "Use when user asks for gross sales by ASIN for a time period. "
                 "Examples: 'Show gross sales by ASIN for last week', 'Show the gross sales by ASIN for 14 days'. "
@@ -4044,7 +4701,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="gross_sales_total",
-            func=tool_gross_sales_total,
+            func=_create_tool_wrapper(tool_gross_sales_total),
             description=(
                 "Use when user asks for total gross sales (not by ASIN). "
                 "Examples: 'Show the gross sales for last week'. "
@@ -4054,7 +4711,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="net_sales_by_asin",
-            func=tool_net_sales_by_asin,
+            func=_create_tool_wrapper(tool_net_sales_by_asin),
             description=(
                 "Use when user asks for net sales by ASIN. "
                 "Examples: 'Show net sales by ASIN for last week', 'Show the net sales by ASIN'. "
@@ -4064,7 +4721,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="gross_sales_for_specific_asin",
-            func=tool_gross_sales_for_specific_asin,
+            func=_create_tool_wrapper(tool_gross_sales_for_specific_asin),
             description=(
                 "Use when user asks for gross sales for a SPECIFIC ASIN. "
                 "Examples: 'Show gross sales for ASIN B0XXXXXXXX for last week'. "
@@ -4074,7 +4731,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="buy_box_percentages_for_asins",
-            func=tool_buy_box_percentages_for_asins,
+            func=_create_tool_wrapper(tool_buy_box_percentages_for_asins),
             description=(
                 "Use when the user asks to 'Show the Buy Box percentages for my ASINs'. "
                 "Input: the full user prompt. Return 'ok' if table prepared."
@@ -4082,7 +4739,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="average_buy_box_percentage",
-            func=tool_average_buy_box_percentage,
+            func=_create_tool_wrapper(tool_average_buy_box_percentage),
             description=(
                 "Use when the user asks for an average Buy Box percentage (e.g., 'Show my average Buy Box percentage for last week'). "
                 "Input: the full user prompt. Return 'ok' if value prepared."
@@ -4090,7 +4747,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="sessions_for_asins",
-            func=tool_sessions_for_asins,
+            func=_create_tool_wrapper(tool_sessions_for_asins),
             description=(
                 "Use when the user asks for total number of Sessions for ASINs for a time period (e.g., 'Show the total number of Sessions for my ASINs last week'). "
                 "Input: the full user prompt. Return 'ok' if table prepared."
@@ -4098,7 +4755,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="average_order_value",
-            func=tool_average_order_value,
+            func=_create_tool_wrapper(tool_average_order_value),
             description=(
                 "Use when the user asks for Average Order Value for ASINs for a time period (e.g., 'Show the Average Order Value for my ASINs last week'). "
                 "Input: the full user prompt. Return 'ok' if table prepared."
@@ -4106,7 +4763,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="suppressed_asins",
-            func=tool_suppressed_asins,
+            func=_create_tool_wrapper(tool_suppressed_asins),
             description=(
                 "Use when the user asks for ASINs suppressed (Buy Box % ≤ 80%) for a time period (e.g., 'Show the ASINs suppressed last week'). "
                 "Input: the full user prompt. Return 'ok' if table prepared."
@@ -4114,7 +4771,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="buy_box_percentages_for_asins",
-            func=tool_buy_box_percentages_for_asins,
+            func=_create_tool_wrapper(tool_buy_box_percentages_for_asins),
             description=(
                 "Use when the user asks to 'Show the Buy Box percentages for my ASINs'. "
                 "Input: the full user prompt. Return 'ok' if table prepared."
@@ -4122,7 +4779,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="average_buy_box_percentage",
-            func=tool_average_buy_box_percentage,
+            func=_create_tool_wrapper(tool_average_buy_box_percentage),
             description=(
                 "Use when the user asks for an average Buy Box percentage (e.g., 'Show my average Buy Box percentage for last week'). "
                 "Input: the full user prompt. Return 'ok' if value prepared."
@@ -4130,7 +4787,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="sessions_for_asins",
-            func=tool_sessions_for_asins,
+            func=_create_tool_wrapper(tool_sessions_for_asins),
             description=(
                 "Use when the user asks for total number of Sessions for ASINs for a time period (e.g., 'Show the total number of Sessions for my ASINs last week'). "
                 "Input: the full user prompt. Return 'ok' if table prepared."
@@ -4138,7 +4795,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="average_order_value",
-            func=tool_average_order_value,
+            func=_create_tool_wrapper(tool_average_order_value),
             description=(
                 "Use when the user asks for Average Order Value for ASINs for a time period (e.g., 'Show the Average Order Value for my ASINs last week'). "
                 "Input: the full user prompt. Return 'ok' if table prepared."
@@ -4146,7 +4803,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="suppressed_asins",
-            func=tool_suppressed_asins,
+            func=_create_tool_wrapper(tool_suppressed_asins),
             description=(
                 "Use when the user asks for ASINs suppressed (Buy Box % ≤ 80%) for a time period (e.g., 'Show the ASINs suppressed last week'). "
                 "Input: the full user prompt. Return 'ok' if table prepared."
@@ -4154,7 +4811,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="currently_suppressed_asins",
-            func=tool_currently_suppressed_asins,
+            func=_create_tool_wrapper(tool_currently_suppressed_asins),
             description=(
                 "Use when the user asks for ASINs currently suppressed (0% Buy Box). "
                 "Input: the full user prompt. Return 'ok' if table prepared."
@@ -4162,7 +4819,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="sales_lost_to_other_sellers",
-            func=tool_sales_lost_to_other_sellers,
+            func=_create_tool_wrapper(tool_sales_lost_to_other_sellers),
             description=(
                 "Use when the user asks for total sales lost to other sellers for a time period (e.g., 'Show the total sales lost to other sellers last week'). "
                 "Input: the full user prompt. Return 'ok' if table prepared."
@@ -4170,7 +4827,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="profit_lost_to_other_sellers",
-            func=tool_profit_lost_to_other_sellers,
+            func=_create_tool_wrapper(tool_profit_lost_to_other_sellers),
             description=(
                 "Use when the user asks for total gross profit lost to other sellers for a time period (e.g., 'Show the total gross profit lost to other sellers last week'). "
                 "Input: the full user prompt. Return 'ok' if table prepared."
@@ -4178,7 +4835,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="gross_margin_underperformers",
-            func=tool_gross_margin_underperformers,
+            func=_create_tool_wrapper(tool_gross_margin_underperformers),
             description=(
                 "Use when the user asks for ASINs with gross margin less than plan. "
                 "Synonyms for 'gross margin': RGP, GP. "
@@ -4190,7 +4847,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="gross_profit_all_asins",
-            func=tool_gross_profit_for_all_asins,
+            func=_create_tool_wrapper(tool_gross_profit_for_all_asins),
             description=(
                 "Use when the user asks for gross profit for all ASINs (individual products). "
                 "Synonyms for 'gross profit': RGP, GP, profit, net profit. "
@@ -4203,7 +4860,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="gross_profit_all_brands",
-            func=tool_gross_profit_for_all_brands,
+            func=_create_tool_wrapper(tool_gross_profit_for_all_brands),
             description=(
                 "Use when the user asks for gross profit for all brands (company names). "
                 "Synonyms for 'gross profit': RGP, GP, profit, net profit. "
@@ -4216,7 +4873,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="gross_margin_all_asins",
-            func=tool_gross_margin_for_all_asins,
+            func=_create_tool_wrapper(tool_gross_margin_for_all_asins),
             description=(
                 "Use when the user asks for gross margin for all ASINs (individual products). "
                 "Synonyms for 'gross margin': margin %. "
@@ -4228,7 +4885,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="gross_margin_all_brands",
-            func=tool_gross_margin_for_all_brands,
+            func=_create_tool_wrapper(tool_gross_margin_for_all_brands),
             description=(
                 "Use when the user asks for gross margin for all brands (company names). "
                 "Synonyms for 'gross margin': margin %. "
@@ -4240,7 +4897,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="sales_descending_order",
-            func=tool_sales_descending_order,
+            func=_create_tool_wrapper(tool_sales_descending_order),
             description=(
                 "Use when the user asks for ASINs sales in descending order (ranked list). "
                 "Synonyms for 'sales': ATS, net sales, product sales, top line sales. "
@@ -4253,7 +4910,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="gross_profit_descending_order",
-            func=tool_gross_profit_descending_order,
+            func=_create_tool_wrapper(tool_gross_profit_descending_order),
             description=(
                 "Use when the user asks for ASINs gross profit in descending order (ranked list). "
                 "Synonyms for 'gross profit': RGP, GP, profit, net profit. "
@@ -4266,7 +4923,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="gross_margin_descending_order",
-            func=tool_gross_margin_descending_order,
+            func=_create_tool_wrapper(tool_gross_margin_descending_order),
             description=(
                 "Use when the user asks for ASINs gross margin in descending order (ranked list). "
                 "Synonyms for 'gross margin': margin %. "
@@ -4277,7 +4934,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="brands_sales_descending_order",
-            func=tool_brands_sales_descending_order,
+            func=_create_tool_wrapper(tool_brands_sales_descending_order),
             description=(
                 "Use when the user asks for brands sales in descending order (ranked list). "
                 "Synonyms for 'sales': ATS, net sales, product sales, top line sales. "
@@ -4290,7 +4947,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="brands_gross_profit_descending_order",
-            func=tool_brands_gross_profit_descending_order,
+            func=_create_tool_wrapper(tool_brands_gross_profit_descending_order),
             description=(
                 "Use when the user asks for brands gross profit in descending order (ranked list). "
                 "Synonyms for 'gross profit': RGP, GP, profit, net profit. "
@@ -4303,7 +4960,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="brands_gross_margin_descending_order",
-            func=tool_brands_gross_margin_descending_order,
+            func=_create_tool_wrapper(tool_brands_gross_margin_descending_order),
             description=(
                 "Use when the user asks for brands gross margin in descending order (ranked list). "
                 "Synonyms for 'gross margin': margin %. "
@@ -4314,7 +4971,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="top_brands_sales",
-            func=tool_top_brands_sales,
+            func=_create_tool_wrapper(tool_top_brands_sales),
             description=(
                 "Use when the user asks for top X brands sales in descending order. "
                 "Synonyms for 'sales': ATS, net sales, product sales, top line sales. "
@@ -4326,7 +4983,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="top_asins_sales",
-            func=tool_top_asins_sales,
+            func=_create_tool_wrapper(tool_top_asins_sales),
             description=(
                 "Use when the user asks for top X ASINs sales in descending order. "
                 "Synonyms for 'sales': ATS, net sales, product sales, top line sales. "
@@ -4338,7 +4995,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="fees_higher_than_plan",
-            func=tool_fees_higher_than_plan,
+            func=_create_tool_wrapper(tool_fees_higher_than_plan),
             description=(
                 "Use when the user asks for ASINs with average total fees higher than plan. "
                 "Input: the full user prompt. Return 'ok' if table prepared."
@@ -4346,7 +5003,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="units_sold_for_specific_asin",
-            func=tool_units_sold_for_specific_asin,
+            func=_create_tool_wrapper(tool_units_sold_for_specific_asin),
             description=(
                 "Use when the user asks for units sold for a specific ASIN. "
                 "Examples: 'Show units sold for ASIN B0XXXXXXXX'. "
@@ -4356,7 +5013,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="sales_for_specific_asin",
-            func=tool_sales_for_specific_asin,
+            func=_create_tool_wrapper(tool_sales_for_specific_asin),
             description=(
                 "Use when the user asks for sales for a specific ASIN. "
                 "Synonyms for 'sales': ATS, net sales, product sales, top line sales. "
@@ -4369,7 +5026,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="total_fees_for_specific_asin",
-            func=tool_total_fees_for_specific_asin,
+            func=_create_tool_wrapper(tool_total_fees_for_specific_asin),
             description=(
                 "Use when the user asks for total fees for a specific ASIN. "
                 "Examples: 'Show total fees for ASIN B0XXXXXXXX'. "
@@ -4379,7 +5036,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="gross_profit_for_specific_asin",
-            func=tool_gross_profit_for_specific_asin,
+            func=_create_tool_wrapper(tool_gross_profit_for_specific_asin),
             description=(
                 "Use when the user asks for gross profit for a specific ASIN. "
                 "Synonyms for 'gross profit': RGP, GP. "
@@ -4391,7 +5048,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="gross_margin_for_specific_asin",
-            func=tool_gross_margin_for_specific_asin,
+            func=_create_tool_wrapper(tool_gross_margin_for_specific_asin),
             description=(
                 "Use when the user asks for gross margin for a specific ASIN. "
                 "Synonyms for 'gross margin': margin %. "
@@ -4402,7 +5059,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="top_brands_gross_profit",
-            func=tool_top_brands_gross_profit,
+            func=_create_tool_wrapper(tool_top_brands_gross_profit),
             description=(
                 "Use when the user asks for top X brands gross profit in descending order. "
                 "Synonyms for 'gross profit': RGP, GP, profit, net profit. "
@@ -4414,7 +5071,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="top_brands_gross_margin",
-            func=tool_top_brands_gross_margin,
+            func=_create_tool_wrapper(tool_top_brands_gross_margin),
             description=(
                 "Use when the user asks for top X brands gross margin in descending order. "
                 "Synonyms for 'gross margin': margin %. "
@@ -4426,7 +5083,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="top_asins_gross_profit",
-            func=tool_top_asins_gross_profit,
+            func=_create_tool_wrapper(tool_top_asins_gross_profit),
             description=(
                 "Use when the user asks for top X ASINs gross profit in descending order. "
                 "Synonyms for 'gross profit': RGP, GP, profit, net profit. "
@@ -4438,7 +5095,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="top_asins_gross_margin",
-            func=tool_top_asins_gross_margin,
+            func=_create_tool_wrapper(tool_top_asins_gross_margin),
             description=(
                 "Use when the user asks for top X ASINs gross margin in descending order. "
                 "Synonyms for 'gross margin': margin %. "
@@ -4450,7 +5107,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="total_sales_gross_profit_margin_brands",
-            func=tool_total_sales_gross_profit_margin_brands,
+            func=_create_tool_wrapper(tool_total_sales_gross_profit_margin_brands),
             description=(
                 "Use when the user asks for total sales, gross profit, and margin for all brands. "
                 "Synonyms for 'sales': ATS, net sales, product sales, top line sales. "
@@ -4466,7 +5123,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="orders_sales_price_lower_plan",
-            func=tool_orders_sales_price_lower_plan,
+            func=_create_tool_wrapper(tool_orders_sales_price_lower_plan),
             description=(
                 "Use when the user asks for orders where the sales price was lower than plan for ASIN XYZ. "
                 "Synonyms for 'orders': sales. "
@@ -4480,7 +5137,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="asins_avg_price_lower_plan",
-            func=tool_asins_avg_price_lower_plan,
+            func=_create_tool_wrapper(tool_asins_avg_price_lower_plan),
             description=(
                 "Use when the user asks for ASINs where the average sales price was lower than plan. "
                 "Synonyms for 'average sales price': average order value, AOV. "
@@ -4492,7 +5149,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="asins_fees_higher_plan",
-            func=tool_asins_fees_higher_plan,
+            func=_create_tool_wrapper(tool_asins_fees_higher_plan),
             description=(
                 "Use when the user asks for ASINs with average total fees higher than plan for the last settlement period. "
                 "Synonyms for 'last settlement period': LSP, settlement. "
@@ -4504,7 +5161,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="orders_fees_higher_plan",
-            func=tool_orders_fees_higher_plan,
+            func=_create_tool_wrapper(tool_orders_fees_higher_plan),
             description=(
                 "Use when the user asks for orders where fees were higher than plan for ASIN XYZ. "
                 "Examples: 'Show orders where fees were higher than plan for ASIN B0XXXXXXXX'. "
@@ -4513,7 +5170,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="orders_referral_fees_higher_plan",
-            func=tool_orders_referral_fees_higher_plan,
+            func=_create_tool_wrapper(tool_orders_referral_fees_higher_plan),
             description=(
                 "Use when the user asks for orders where referral fees were higher than plan for ASIN XYZ. "
                 "Examples: 'Show orders where referral fees were higher than plan for ASIN B0XXXXXXXX'. "
@@ -4522,7 +5179,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="orders_fulfillment_fees_higher_plan",
-            func=tool_orders_fulfillment_fees_higher_plan,
+            func=_create_tool_wrapper(tool_orders_fulfillment_fees_higher_plan),
             description=(
                 "Use when the user asks for orders where fulfillment fees were higher than plan for ASIN XYZ. "
                 "Examples: 'Show orders where fulfillment fees were higher than plan for ASIN B0XXXXXXXX'. "
@@ -4531,7 +5188,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="settlement_period_definition",
-            func=tool_settlement_period_definition,
+            func=_create_tool_wrapper(tool_settlement_period_definition),
             description=(
                 "Use when the user asks 'What is a settlement period?' or similar questions about settlement period definition. "
                 "Examples: 'What is a settlement period?', 'Define settlement period', 'Explain settlement period'. "
@@ -4540,7 +5197,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="settlement_period_timing",
-            func=tool_settlement_period_timing,
+            func=_create_tool_wrapper(tool_settlement_period_timing),
             description=(
                 "Use when the user asks 'When is my settlement period?' or similar questions about settlement period timing. "
                 "Examples: 'When is my settlement period?', 'What is my settlement period?', 'When does my settlement period occur?'. "
@@ -4549,7 +5206,7 @@ def build_agent() -> AgentExecutor:
         ),
         Tool(
             name="settlement_period_reason",
-            func=tool_settlement_period_reason,
+            func=_create_tool_wrapper(tool_settlement_period_reason),
             description=(
                 "Use when the user asks 'Why is my settlement period that date range?' or similar questions about why settlement period has specific dates. "
                 "Examples: 'Why is my settlement period that date range?', 'Why does my settlement period start on that date?', 'How is my settlement period determined?'. "
@@ -4594,6 +5251,9 @@ if st.button("🗑️ Clear Conversation History"):
 
 # build agent once
 if "agent" not in st.session_state:
+    # Initialize dataframes for tool functions
+    dataframes = _build_dataframes_dict()
+    _set_global_dataframes(dataframes, "ten_west")
     st.session_state["agent"] = build_agent()
 
 # Initialize conversation history if not exists
