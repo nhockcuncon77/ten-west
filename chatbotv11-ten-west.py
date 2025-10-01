@@ -4943,11 +4943,12 @@ def build_agent() -> AgentExecutor:
             func=_create_tool_wrapper(tool_gross_profit_for_all_asins),
             description=(
                 "Use when the user asks for gross profit for all ASINs (individual products). "
-                "Synonyms for 'gross profit': RGP, GP, profit, net profit. "
+                "Synonyms for 'gross profit': RGP, GP, profit, net profit, profit dollars. "
                 "Keywords: 'gross profit', 'profit dollars', 'profit amount', 'ASINs', 'products', 'individual items'. "
                 "Examples: 'Show gross profit for all ASINs', 'Show RGP for all ASINs', 'Show GP for all ASINs', "
                 "'Show profit for all ASINs', 'Show net profit for all ASINs'. "
-                "This is about profit DOLLAR AMOUNTS, not percentages. "
+                "IMPORTANT: This is about profit DOLLAR AMOUNTS (like $87,879.81), NOT percentages. "
+                "If user asks for 'gross margin' or percentages, use gross_margin_all_asins instead. "
                 "Input: the full user prompt. Return 'ok' if value prepared."
             ),
         ),
@@ -4969,10 +4970,11 @@ def build_agent() -> AgentExecutor:
             func=_create_tool_wrapper(tool_gross_margin_for_all_asins),
             description=(
                 "Use when the user asks for gross margin for all ASINs (individual products). "
-                "Synonyms for 'gross margin': margin %. "
+                "Synonyms for 'gross margin': margin %, margin percentage, gross margin percentage. "
                 "Keywords: 'gross margin', 'margin percentage', 'margin %', 'ASINs', 'products', 'individual items'. "
-                "Examples: 'Show gross margin for all ASINs', 'Show margin % for all ASINs'. "
-                "This is about margin PERCENTAGE, not dollar amounts. "
+                "Examples: 'Show gross margin for all ASINs', 'Show margin % for all ASINs', 'Show gross margin percentage for all ASINs'. "
+                "IMPORTANT: This is about margin PERCENTAGE (like 25.5%), NOT dollar amounts. "
+                "If user asks for 'gross profit' or dollar amounts, use gross_profit_all_asins instead. "
                 "Input: the full user prompt. Return 'ok' if value prepared."
             ),
         ),
