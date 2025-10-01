@@ -3347,11 +3347,9 @@ def tool_sales_for_specific_asin(dataframes: Dict[str, pd.DataFrame], prompt: st
     try:
         # Extract ASIN from prompt - handle any ASIN format (6-15 characters)
         asin_match = re.search(r'\b([A-Z0-9]{6,15})\b', prompt.upper())
-        if not asin_match:
-            st.session_state["agent_error"] = "Invalid ASIN."
+        if not asin_q:
+            st.session_state["agent_error"] = "Invalid ASIN format. Please provide an ASIN (6-15 characters, letters and numbers)."
             return "error"
-        
-        asin_q = asin_match.group(1)
         
         # Find ASIN report using smart detection
         asin_report = _smart_find_asin_report(dataframes, company_name)
@@ -3426,13 +3424,15 @@ def tool_sales_for_specific_asin(dataframes: Dict[str, pd.DataFrame], prompt: st
 def tool_total_fees_for_specific_asin(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """Show total fees for a specific ASIN."""
     try:
-        # Extract ASIN from prompt
-        asin_match = re.search(r'\b([A-Z0-9]{6,15})\b', prompt.upper())
-        if not asin_match:
-            st.session_state["agent_error"] = "Invalid ASIN."
+        # Extract ASIN from prompt - look for ASIN after "ASIN" keyword or B0/B1 patterns
+        asin_match = re.search(r'ASIN\s+([A-Z0-9]{6,15})|(B[0-9A-Z]{8,10})', prompt.upper())
+        if asin_match:
+            asin_q = asin_match.group(1) or asin_match.group(2)
+        else:
+            asin_q = None
+        if not asin_q:
+            st.session_state["agent_error"] = "Invalid ASIN format. Please provide an ASIN (6-15 characters, letters and numbers)."
             return "error"
-        
-        asin_q = asin_match.group(1)
         
         # Find ASIN report using smart detection
         asin_report = _smart_find_asin_report(dataframes, company_name)
@@ -3519,13 +3519,15 @@ def tool_total_fees_for_specific_asin(dataframes: Dict[str, pd.DataFrame], promp
 def tool_gross_profit_for_specific_asin(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """Show gross profit for a specific ASIN."""
     try:
-        # Extract ASIN from prompt
-        asin_match = re.search(r'\b([A-Z0-9]{6,15})\b', prompt.upper())
-        if not asin_match:
-            st.session_state["agent_error"] = "Invalid ASIN."
+        # Extract ASIN from prompt - look for ASIN after "ASIN" keyword or B0/B1 patterns
+        asin_match = re.search(r'ASIN\s+([A-Z0-9]{6,15})|(B[0-9A-Z]{8,10})', prompt.upper())
+        if asin_match:
+            asin_q = asin_match.group(1) or asin_match.group(2)
+        else:
+            asin_q = None
+        if not asin_q:
+            st.session_state["agent_error"] = "Invalid ASIN format. Please provide an ASIN (6-15 characters, letters and numbers)."
             return "error"
-        
-        asin_q = asin_match.group(1)
         
         # Find ASIN report using smart detection
         asin_report = _smart_find_asin_report(dataframes, company_name)
@@ -3599,13 +3601,15 @@ def tool_gross_profit_for_specific_asin(dataframes: Dict[str, pd.DataFrame], pro
 def tool_gross_margin_for_specific_asin(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """Show gross margin for a specific ASIN."""
     try:
-        # Extract ASIN from prompt
-        asin_match = re.search(r'\b([A-Z0-9]{6,15})\b', prompt.upper())
-        if not asin_match:
-            st.session_state["agent_error"] = "Invalid ASIN."
+        # Extract ASIN from prompt - look for ASIN after "ASIN" keyword or B0/B1 patterns
+        asin_match = re.search(r'ASIN\s+([A-Z0-9]{6,15})|(B[0-9A-Z]{8,10})', prompt.upper())
+        if asin_match:
+            asin_q = asin_match.group(1) or asin_match.group(2)
+        else:
+            asin_q = None
+        if not asin_q:
+            st.session_state["agent_error"] = "Invalid ASIN format. Please provide an ASIN (6-15 characters, letters and numbers)."
             return "error"
-        
-        asin_q = asin_match.group(1)
         
         # Find ASIN report using smart detection
         asin_report = _smart_find_asin_report(dataframes, company_name)
@@ -4166,8 +4170,12 @@ def tool_orders_fees_higher_plan(dataframes: Dict[str, pd.DataFrame], prompt: st
     Saves formatted string and table in session_state['orders_fees_higher_string'] and 'orders_fees_higher_table'].
     """
     try:
-        # Extract ASIN from prompt
-        asin_match = re.search(r'\b([A-Z0-9]{6,15})\b', prompt.upper())
+        # Extract ASIN from prompt - look for ASIN after "ASIN" keyword or B0/B1 patterns
+        asin_match = re.search(r'ASIN\s+([A-Z0-9]{6,15})|(B[0-9A-Z]{8,10})', prompt.upper())
+        if asin_match:
+            asin_q = asin_match.group(1) or asin_match.group(2)
+        else:
+            asin_q = None
         if not asin_match:
             st.session_state["agent_error"] = "No valid ASIN found in the prompt. Please provide an ASIN in B0XXXXXXXX format."
             return "error"
@@ -4324,8 +4332,12 @@ def tool_orders_referral_fees_higher_plan(dataframes: Dict[str, pd.DataFrame], p
     Saves formatted string and table in session_state['orders_referral_fees_higher_string'] and 'orders_referral_fees_higher_table'].
     """
     try:
-        # Extract ASIN from prompt
-        asin_match = re.search(r'\b([A-Z0-9]{6,15})\b', prompt.upper())
+        # Extract ASIN from prompt - look for ASIN after "ASIN" keyword or B0/B1 patterns
+        asin_match = re.search(r'ASIN\s+([A-Z0-9]{6,15})|(B[0-9A-Z]{8,10})', prompt.upper())
+        if asin_match:
+            asin_q = asin_match.group(1) or asin_match.group(2)
+        else:
+            asin_q = None
         if not asin_match:
             st.session_state["agent_error"] = "No valid ASIN found in the prompt. Please provide an ASIN in B0XXXXXXXX format."
             return "error"
