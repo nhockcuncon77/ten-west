@@ -688,6 +688,25 @@ def _smart_find_business_report(dataframes: Dict[str, pd.DataFrame], company_nam
     """
     return _smart_find_file(dataframes, 'BusinessReport', company_name)
 
+def _find_closest_asin(asin_q: str, all_asins: list) -> tuple[str, bool]:
+    """
+    Find the closest ASIN match and return (matched_asin, closest_match_used).
+    """
+    if asin_q in all_asins:
+        return asin_q, False
+    
+    import difflib
+    suggestion = difflib.get_close_matches(asin_q, all_asins, n=1, cutoff=0.6)
+    if suggestion:
+        return suggestion[0], True
+    
+    # Try with lower cutoff
+    suggestion = difflib.get_close_matches(asin_q, all_asins, n=1, cutoff=0.3)
+    if suggestion:
+        return suggestion[0], True
+    
+    return asin_q, False
+
 def _smart_find_fees_underperformers(dataframes: Dict[str, pd.DataFrame], company_name: str = None) -> Optional[str]:
     """
     Smart detection of fees underperformers files.
@@ -3243,11 +3262,14 @@ def tool_fees_higher_than_plan(dataframes: Dict[str, pd.DataFrame], prompt: str,
 
 def tool_units_sold_for_specific_asin(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """Show units sold for a specific ASIN."""
+    print(f"DEBUG: Function called with prompt: '{prompt}'")
     try:
-        # Extract ASIN from prompt
-        asin_match = re.search(r'\b(B0[0-9A-Z]{8})\b', prompt.upper())
+        # Extract ASIN from prompt - handle any ASIN format (6-15 characters)
+        asin_match = re.search(r'\b([A-Z0-9]{6,15})\b', prompt.upper())
+        print(f"DEBUG: ASIN match result: {asin_match}")
         if not asin_match:
-            st.session_state["agent_error"] = "Invalid ASIN."
+            print("DEBUG: No ASIN match found in prompt")
+            st.session_state["agent_error"] = "Invalid ASIN format. Please provide an ASIN (6-15 characters, letters and numbers)."
             return "error"
         
         asin_q = asin_match.group(1)
@@ -3262,34 +3284,20 @@ def tool_units_sold_for_specific_asin(dataframes: Dict[str, pd.DataFrame], promp
         
         # "did you mean?" fallback
         all_asins = asin_df["ASIN"].astype(str).str.upper().tolist()
-        print(f"DEBUG: Looking for ASIN: {asin_q}")
-        print(f"DEBUG: Total ASINs in data: {len(all_asins)}")
-        print(f"DEBUG: First 5 ASINs: {all_asins[:5]}")
+        original_asin = asin_q  # Keep track of original ASIN for "Did you mean?" message
+        
+        asin_q, closest_match_used = _find_closest_asin(asin_q, all_asins)
         
         if asin_q not in all_asins:
+            # No close match found, show suggestions
             import difflib
-            suggestion = difflib.get_close_matches(asin_q, all_asins, n=1, cutoff=0.6)
-            print(f"DEBUG: Closest match suggestion: {suggestion}")
+            suggestion = difflib.get_close_matches(original_asin, all_asins, n=3, cutoff=0.1)
             if suggestion:
-                asin_q = suggestion[0]
-                print(f"DEBUG: Using closest match: {asin_q}")
+                st.session_state["agent_error"] = f"Invalid ASIN {original_asin}. Did you mean: {', '.join(suggestion)}?"
             else:
-                # Try with lower cutoff
-                suggestion = difflib.get_close_matches(asin_q, all_asins, n=1, cutoff=0.3)
-                print(f"DEBUG: Lower cutoff suggestion: {suggestion}")
-                if suggestion:
-                    asin_q = suggestion[0]
-                    print(f"DEBUG: Using lower cutoff match: {asin_q}")
-                else:
-                    # Show available ASINs for debugging
-                    print(f"DEBUG: No close match found. Available ASINs: {all_asins[:10]}")
-                    # Try to find any match with very low cutoff
-                    suggestion = difflib.get_close_matches(asin_q, all_asins, n=3, cutoff=0.1)
-                    if suggestion:
-                        st.session_state["agent_error"] = f"Invalid ASIN {asin_q}. Did you mean: {', '.join(suggestion)}?"
-                    else:
-                        st.session_state["agent_error"] = f"Invalid ASIN {asin_q}. No similar ASINs found."
-                    return "error"
+                sample_asins = all_asins[:5] if len(all_asins) > 5 else all_asins
+                st.session_state["agent_error"] = f"Invalid ASIN {original_asin}. Available ASINs include: {', '.join(sample_asins)}"
+            return "error"
         
         # Find the ASIN
         row = asin_df[asin_df["ASIN"] == asin_q]
@@ -3322,6 +3330,11 @@ def tool_units_sold_for_specific_asin(dataframes: Dict[str, pd.DataFrame], promp
         st.session_state["units_sold_count"] = units
         st.session_state["units_sold_period"] = settlement_period
         
+        # Add "Did you mean?" message if closest match was used
+        if closest_match_used:
+            st.session_state["units_sold_did_you_mean"] = f"Did you mean {asin_q}? (searched for {original_asin})"
+            print(f"DEBUG: Set units_sold_did_you_mean: {st.session_state['units_sold_did_you_mean']}")
+        
         return "ok"
         
     except Exception as e:
@@ -3332,8 +3345,8 @@ def tool_units_sold_for_specific_asin(dataframes: Dict[str, pd.DataFrame], promp
 def tool_sales_for_specific_asin(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """Show sales for a specific ASIN."""
     try:
-        # Extract ASIN from prompt
-        asin_match = re.search(r'\b(B0[0-9A-Z]{8})\b', prompt.upper())
+        # Extract ASIN from prompt - handle any ASIN format (6-15 characters)
+        asin_match = re.search(r'\b([A-Z0-9]{6,15})\b', prompt.upper())
         if not asin_match:
             st.session_state["agent_error"] = "Invalid ASIN."
             return "error"
@@ -3350,14 +3363,20 @@ def tool_sales_for_specific_asin(dataframes: Dict[str, pd.DataFrame], prompt: st
         
         # "did you mean?" fallback
         all_asins = asin_df["ASIN"].astype(str).str.upper().tolist()
+        original_asin = asin_q  # Keep track of original ASIN for "Did you mean?" message
+        
+        asin_q, closest_match_used = _find_closest_asin(asin_q, all_asins)
+        
         if asin_q not in all_asins:
+            # No close match found, show suggestions
             import difflib
-            suggestion = difflib.get_close_matches(asin_q, all_asins, n=1, cutoff=0.6)
+            suggestion = difflib.get_close_matches(original_asin, all_asins, n=3, cutoff=0.1)
             if suggestion:
-                asin_q = suggestion[0]
+                st.session_state["agent_error"] = f"Invalid ASIN {original_asin}. Did you mean: {', '.join(suggestion)}?"
             else:
-                st.session_state["agent_error"] = f"Invalid ASIN {asin_q}."
-                return "error"
+                sample_asins = all_asins[:5] if len(all_asins) > 5 else all_asins
+                st.session_state["agent_error"] = f"Invalid ASIN {original_asin}. Available ASINs include: {', '.join(sample_asins)}"
+            return "error"
         
         # Find the ASIN
         row = asin_df[asin_df["ASIN"] == asin_q]
@@ -3393,6 +3412,10 @@ def tool_sales_for_specific_asin(dataframes: Dict[str, pd.DataFrame], prompt: st
         st.session_state["sales_units"] = units
         st.session_state["sales_period"] = settlement_period
         
+        # Add "Did you mean?" message if closest match was used
+        if closest_match_used:
+            st.session_state["sales_did_you_mean"] = f"Did you mean {asin_q}? (searched for {original_asin})"
+        
         return "ok"
         
     except Exception as e:
@@ -3404,7 +3427,7 @@ def tool_total_fees_for_specific_asin(dataframes: Dict[str, pd.DataFrame], promp
     """Show total fees for a specific ASIN."""
     try:
         # Extract ASIN from prompt
-        asin_match = re.search(r'\b(B0[0-9A-Z]{8})\b', prompt.upper())
+        asin_match = re.search(r'\b([A-Z0-9]{6,15})\b', prompt.upper())
         if not asin_match:
             st.session_state["agent_error"] = "Invalid ASIN."
             return "error"
@@ -3421,14 +3444,20 @@ def tool_total_fees_for_specific_asin(dataframes: Dict[str, pd.DataFrame], promp
         
         # "did you mean?" fallback
         all_asins = asin_df["ASIN"].astype(str).str.upper().tolist()
+        original_asin = asin_q  # Keep track of original ASIN for "Did you mean?" message
+        
+        asin_q, closest_match_used = _find_closest_asin(asin_q, all_asins)
+        
         if asin_q not in all_asins:
+            # No close match found, show suggestions
             import difflib
-            suggestion = difflib.get_close_matches(asin_q, all_asins, n=1, cutoff=0.6)
+            suggestion = difflib.get_close_matches(original_asin, all_asins, n=3, cutoff=0.1)
             if suggestion:
-                asin_q = suggestion[0]
+                st.session_state["agent_error"] = f"Invalid ASIN {original_asin}. Did you mean: {', '.join(suggestion)}?"
             else:
-                st.session_state["agent_error"] = f"Invalid ASIN {asin_q}."
-                return "error"
+                sample_asins = all_asins[:5] if len(all_asins) > 5 else all_asins
+                st.session_state["agent_error"] = f"Invalid ASIN {original_asin}. Available ASINs include: {', '.join(sample_asins)}"
+            return "error"
         
         # Find the ASIN
         row = asin_df[asin_df["ASIN"] == asin_q]
@@ -3476,6 +3505,10 @@ def tool_total_fees_for_specific_asin(dataframes: Dict[str, pd.DataFrame], promp
         st.session_state["fees_per_unit"] = per_unit_fees
         st.session_state["fees_period"] = settlement_period
         
+        # Add "Did you mean?" message if closest match was used
+        if closest_match_used:
+            st.session_state["fees_did_you_mean"] = f"Did you mean {asin_q}? (searched for {original_asin})"
+        
         return "ok"
         
     except Exception as e:
@@ -3487,7 +3520,7 @@ def tool_gross_profit_for_specific_asin(dataframes: Dict[str, pd.DataFrame], pro
     """Show gross profit for a specific ASIN."""
     try:
         # Extract ASIN from prompt
-        asin_match = re.search(r'\b(B0[0-9A-Z]{8})\b', prompt.upper())
+        asin_match = re.search(r'\b([A-Z0-9]{6,15})\b', prompt.upper())
         if not asin_match:
             st.session_state["agent_error"] = "Invalid ASIN."
             return "error"
@@ -3504,14 +3537,20 @@ def tool_gross_profit_for_specific_asin(dataframes: Dict[str, pd.DataFrame], pro
         
         # "did you mean?" fallback
         all_asins = asin_df["ASIN"].astype(str).str.upper().tolist()
+        original_asin = asin_q  # Keep track of original ASIN for "Did you mean?" message
+        
+        asin_q, closest_match_used = _find_closest_asin(asin_q, all_asins)
+        
         if asin_q not in all_asins:
+            # No close match found, show suggestions
             import difflib
-            suggestion = difflib.get_close_matches(asin_q, all_asins, n=1, cutoff=0.6)
+            suggestion = difflib.get_close_matches(original_asin, all_asins, n=3, cutoff=0.1)
             if suggestion:
-                asin_q = suggestion[0]
+                st.session_state["agent_error"] = f"Invalid ASIN {original_asin}. Did you mean: {', '.join(suggestion)}?"
             else:
-                st.session_state["agent_error"] = f"Invalid ASIN {asin_q}."
-                return "error"
+                sample_asins = all_asins[:5] if len(all_asins) > 5 else all_asins
+                st.session_state["agent_error"] = f"Invalid ASIN {original_asin}. Available ASINs include: {', '.join(sample_asins)}"
+            return "error"
         
         # Find the ASIN
         row = asin_df[asin_df["ASIN"] == asin_q]
@@ -3546,6 +3585,10 @@ def tool_gross_profit_for_specific_asin(dataframes: Dict[str, pd.DataFrame], pro
         st.session_state["gp_per_unit"] = per_unit_gp
         st.session_state["gp_period"] = settlement_period
         
+        # Add "Did you mean?" message if closest match was used
+        if closest_match_used:
+            st.session_state["gp_did_you_mean"] = f"Did you mean {asin_q}? (searched for {original_asin})"
+        
         return "ok"
         
     except Exception as e:
@@ -3557,7 +3600,7 @@ def tool_gross_margin_for_specific_asin(dataframes: Dict[str, pd.DataFrame], pro
     """Show gross margin for a specific ASIN."""
     try:
         # Extract ASIN from prompt
-        asin_match = re.search(r'\b(B0[0-9A-Z]{8})\b', prompt.upper())
+        asin_match = re.search(r'\b([A-Z0-9]{6,15})\b', prompt.upper())
         if not asin_match:
             st.session_state["agent_error"] = "Invalid ASIN."
             return "error"
@@ -3574,14 +3617,20 @@ def tool_gross_margin_for_specific_asin(dataframes: Dict[str, pd.DataFrame], pro
         
         # "did you mean?" fallback
         all_asins = asin_df["ASIN"].astype(str).str.upper().tolist()
+        original_asin = asin_q  # Keep track of original ASIN for "Did you mean?" message
+        
+        asin_q, closest_match_used = _find_closest_asin(asin_q, all_asins)
+        
         if asin_q not in all_asins:
+            # No close match found, show suggestions
             import difflib
-            suggestion = difflib.get_close_matches(asin_q, all_asins, n=1, cutoff=0.6)
+            suggestion = difflib.get_close_matches(original_asin, all_asins, n=3, cutoff=0.1)
             if suggestion:
-                asin_q = suggestion[0]
+                st.session_state["agent_error"] = f"Invalid ASIN {original_asin}. Did you mean: {', '.join(suggestion)}?"
             else:
-                st.session_state["agent_error"] = f"Invalid ASIN {asin_q}."
-                return "error"
+                sample_asins = all_asins[:5] if len(all_asins) > 5 else all_asins
+                st.session_state["agent_error"] = f"Invalid ASIN {original_asin}. Available ASINs include: {', '.join(sample_asins)}"
+            return "error"
         
         # Find the ASIN
         row = asin_df[asin_df["ASIN"] == asin_q]
@@ -3606,6 +3655,10 @@ def tool_gross_margin_for_specific_asin(dataframes: Dict[str, pd.DataFrame], pro
         st.session_state["gm_asin"] = asin_q
         st.session_state["gm_margin"] = margin_str
         st.session_state["gm_period"] = settlement_period
+        
+        # Add "Did you mean?" message if closest match was used
+        if closest_match_used:
+            st.session_state["gm_did_you_mean"] = f"Did you mean {asin_q}? (searched for {original_asin})"
         
         return "ok"
         
@@ -4114,7 +4167,7 @@ def tool_orders_fees_higher_plan(dataframes: Dict[str, pd.DataFrame], prompt: st
     """
     try:
         # Extract ASIN from prompt
-        asin_match = re.search(r'\b(B0[0-9A-Z]{8})\b', prompt.upper())
+        asin_match = re.search(r'\b([A-Z0-9]{6,15})\b', prompt.upper())
         if not asin_match:
             st.session_state["agent_error"] = "No valid ASIN found in the prompt. Please provide an ASIN in B0XXXXXXXX format."
             return "error"
@@ -4272,7 +4325,7 @@ def tool_orders_referral_fees_higher_plan(dataframes: Dict[str, pd.DataFrame], p
     """
     try:
         # Extract ASIN from prompt
-        asin_match = re.search(r'\b(B0[0-9A-Z]{8})\b', prompt.upper())
+        asin_match = re.search(r'\b([A-Z0-9]{6,15})\b', prompt.upper())
         if not asin_match:
             st.session_state["agent_error"] = "No valid ASIN found in the prompt. Please provide an ASIN in B0XXXXXXXX format."
             return "error"
@@ -5714,6 +5767,10 @@ with st.chat_message("assistant"):
             st.caption(f"Source file: {st.session_state['business_file']}")
 
     elif st.session_state.get("units_sold_asin") is not None:
+        # Display "Did you mean?" message if available
+        if st.session_state.get("units_sold_did_you_mean"):
+            st.info(st.session_state["units_sold_did_you_mean"])
+        
         st.write(
             f"You sold {st.session_state['units_sold_count']:,} units of ASIN {st.session_state['units_sold_asin']} "
             f"in the settlement period {st.session_state['units_sold_period']}.")
@@ -5721,6 +5778,10 @@ with st.chat_message("assistant"):
             st.caption(f"Source file: {st.session_state['business_file']}")
 
     elif st.session_state.get("sales_asin") is not None:
+        # Display "Did you mean?" message if available
+        if st.session_state.get("sales_did_you_mean"):
+            st.info(st.session_state["sales_did_you_mean"])
+        
         st.write(
             f"Sales for ASIN {st.session_state['sales_asin']} were ${st.session_state['sales_amount']:,.2f} "
             f"({st.session_state['sales_units']:,} number of units) in the settlement period {st.session_state['sales_period']}.")
@@ -5728,6 +5789,10 @@ with st.chat_message("assistant"):
             st.caption(f"Source file: {st.session_state['business_file']}")
 
     elif st.session_state.get("fees_asin") is not None:
+        # Display "Did you mean?" message if available
+        if st.session_state.get("fees_did_you_mean"):
+            st.info(st.session_state["fees_did_you_mean"])
+        
         st.text(
             f"The total fees for ASIN {st.session_state['fees_asin']} were ${st.session_state['fees_total']:,.2f} (${st.session_state['fees_per_unit']:.2f} per unit) "
             f"in the settlement period {st.session_state['fees_period']}.")
@@ -5735,6 +5800,10 @@ with st.chat_message("assistant"):
             st.caption(f"Source file: {st.session_state['business_file']}")
 
     elif st.session_state.get("gp_asin") is not None:
+        # Display "Did you mean?" message if available
+        if st.session_state.get("gp_did_you_mean"):
+            st.info(st.session_state["gp_did_you_mean"])
+        
         st.text(
             f"The gross profit for ASIN {st.session_state['gp_asin']} was ${st.session_state['gp_amount']:,.2f} "
             f"(${st.session_state['gp_per_unit']:.2f} per unit) in the settlement period {st.session_state['gp_period']}.")
@@ -5742,6 +5811,10 @@ with st.chat_message("assistant"):
             st.caption(f"Source file: {st.session_state['business_file']}")
 
     elif st.session_state.get("gm_asin") is not None:
+        # Display "Did you mean?" message if available
+        if st.session_state.get("gm_did_you_mean"):
+            st.info(st.session_state["gm_did_you_mean"])
+        
         st.write(
             f"The gross margin for ASIN {st.session_state['gm_asin']} was {st.session_state['gm_margin']} "
             f"in the settlement period {st.session_state['gm_period']}.")
