@@ -2601,6 +2601,14 @@ def tool_gross_profit_for_all_asins(dataframes: Dict[str, pd.DataFrame], prompt:
     Examples: 'Show gross profit for all ASINs'.
     Returns formatted string like chatbotv10.py.
     """
+    # Clear gross margin results to prevent cross-contamination
+    if "gm_all_asins" in st.session_state:
+        del st.session_state["gm_all_asins"]
+    if "gm_all_asins_period" in st.session_state:
+        del st.session_state["gm_all_asins_period"]
+    if "gm_all_asins_string" in st.session_state:
+        del st.session_state["gm_all_asins_string"]
+    
     try:
         # Use the exact same logic as chatbotv10.py
         # 1) Clean & convert your columns
@@ -2638,6 +2646,14 @@ def tool_gross_profit_for_all_brands(dataframes: Dict[str, pd.DataFrame], prompt
     Examples: 'Show gross profit for all brands'.
     Saves formatted string in session_state['gp_all_brands_string'].
     """
+    # Clear gross margin results to prevent cross-contamination
+    if "gm_all_brands" in st.session_state:
+        del st.session_state["gm_all_brands"]
+    if "gm_all_brands_period" in st.session_state:
+        del st.session_state["gm_all_brands_period"]
+    if "gm_all_brands_string" in st.session_state:
+        del st.session_state["gm_all_brands_string"]
+    
     try:
         # Use the exact same logic as chatbotv10.py
         # 1) Clean & convert your columns
@@ -2672,6 +2688,16 @@ def tool_gross_margin_for_all_asins(dataframes: Dict[str, pd.DataFrame], prompt:
     Examples: 'Show gross margin for all ASINs'.
     Returns formatted string with gross margin percentage.
     """
+    # Clear gross profit results to prevent cross-contamination
+    if "gp_all_asins" in st.session_state:
+        del st.session_state["gp_all_asins"]
+    if "gp_all_asins_per_unit" in st.session_state:
+        del st.session_state["gp_all_asins_per_unit"]
+    if "gp_all_asins_period" in st.session_state:
+        del st.session_state["gp_all_asins_period"]
+    if "gp_all_asins_string" in st.session_state:
+        del st.session_state["gp_all_asins_string"]
+    
     try:
         # Find the ASIN aggregated report using smart detection
         asin_file = _smart_find_asin_report(dataframes, company_name)
@@ -2743,6 +2769,16 @@ def tool_gross_margin_for_all_brands(dataframes: Dict[str, pd.DataFrame], prompt
     Examples: 'Show gross margin for all brands'.
     Returns formatted string with gross margin percentage.
     """
+    # Clear gross profit results to prevent cross-contamination
+    if "gp_all_brands" in st.session_state:
+        del st.session_state["gp_all_brands"]
+    if "gp_all_brands_per_unit" in st.session_state:
+        del st.session_state["gp_all_brands_per_unit"]
+    if "gp_all_brands_period" in st.session_state:
+        del st.session_state["gp_all_brands_period"]
+    if "gp_all_brands_string" in st.session_state:
+        del st.session_state["gp_all_brands_string"]
+    
     try:
         # Find the ASIN aggregated report using smart detection
         asin_file = _smart_find_asin_report(dataframes, company_name)
