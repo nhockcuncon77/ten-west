@@ -3345,8 +3345,13 @@ def tool_units_sold_for_specific_asin(dataframes: Dict[str, pd.DataFrame], promp
 def tool_sales_for_specific_asin(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """Show sales for a specific ASIN."""
     try:
-        # Extract ASIN from prompt - handle any ASIN format (6-15 characters)
-        asin_match = re.search(r'\b([A-Z0-9]{6,15})\b', prompt.upper())
+        # Extract ASIN from prompt - look for ASIN after "ASIN" keyword or B0/B1 patterns
+        asin_match = re.search(r'ASIN\s+([A-Z0-9]{6,15})|(B[0-9A-Z]{8,10})', prompt.upper())
+        if asin_match:
+            asin_q = asin_match.group(1) or asin_match.group(2)
+        else:
+            asin_q = None
+        
         if not asin_q:
             st.session_state["agent_error"] = "Invalid ASIN format. Please provide an ASIN (6-15 characters, letters and numbers)."
             return "error"
