@@ -2986,10 +2986,11 @@ def tool_brands_sales_descending_order(dataframes: Dict[str, pd.DataFrame], prom
     # Pull Brand & ATS, strip "$,"
     dfb_sales = brand_df[["Brands", "Amazon Top-line Sales (ATS)"]].copy()
 
-    # Drop any rows with blank or missing Brands
+    # Drop any rows with blank or missing Brands, and exclude "Total" brand
     dfb_sales = dfb_sales[
         dfb_sales["Brands"].notna() &
-        (dfb_sales["Brands"].astype(str).str.strip() != "")
+        (dfb_sales["Brands"].astype(str).str.strip() != "") &
+        (dfb_sales["Brands"].astype(str).str.strip().str.lower() != "total")
     ]
 
     # Convert ATS to numeric for sorting
@@ -3042,6 +3043,12 @@ def tool_brands_gross_profit_descending_order(dataframes: Dict[str, pd.DataFrame
         .rename(columns={"Brands": "Brand"})
         .copy()
     )
+    
+    # Exclude "Total" brand
+    dfb_gp = dfb_gp[
+        dfb_gp["Brand"].notna() &
+        (dfb_gp["Brand"].astype(str).str.strip().str.lower() != "total")
+    ]
     dfb_gp["GP_num"] = pd.to_numeric(
         dfb_gp["Gross Profit"]
               .astype(str)
@@ -3083,6 +3090,12 @@ def tool_brands_gross_margin_descending_order(dataframes: Dict[str, pd.DataFrame
         .rename(columns={"Brands": "Brand"})
         .copy()
     )
+    
+    # Exclude "Total" brand
+    dfb_gm = dfb_gm[
+        dfb_gm["Brand"].notna() &
+        (dfb_gm["Brand"].astype(str).str.strip().str.lower() != "total")
+    ]
     dfb_gm["GM_num"] = pd.to_numeric(
         dfb_gm["Gross Margin"]
               .astype(str)
@@ -3989,6 +4002,12 @@ def tool_total_sales_gross_profit_margin_brands(dataframes: Dict[str, pd.DataFra
     # Pull Brand, Sales, Gross Profit, and Gross Margin
     dfb = brand_df[["Brands", "Amazon Top-line Sales (ATS)", "Gross Profit", "Gross Margin"]].copy()
     dfb.rename(columns={"Brands": "Brand"}, inplace=True)
+    
+    # Exclude "Total" brand
+    dfb = dfb[
+        dfb["Brand"].notna() &
+        (dfb["Brand"].astype(str).str.strip().str.lower() != "total")
+    ]
 
     # Clean & convert Sales to numeric
     dfb["Sales_num"] = (
