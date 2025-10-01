@@ -3262,17 +3262,24 @@ def tool_fees_higher_than_plan(dataframes: Dict[str, pd.DataFrame], prompt: str,
 
 def tool_units_sold_for_specific_asin(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """Show units sold for a specific ASIN."""
+    # Clear previous "Did you mean?" messages
+    if "units_sold_did_you_mean" in st.session_state:
+        del st.session_state["units_sold_did_you_mean"]
+    
     print(f"DEBUG: Function called with prompt: '{prompt}'")
     try:
-        # Extract ASIN from prompt - handle any ASIN format (6-15 characters)
-        asin_match = re.search(r'\b([A-Z0-9]{6,15})\b', prompt.upper())
+        # Extract ASIN from prompt - look for ASIN after "ASIN" keyword or B0/B1 patterns
+        asin_match = re.search(r'ASIN\s+([A-Z0-9]{6,15})|(B[0-9A-Z]{8,10})', prompt.upper())
         print(f"DEBUG: ASIN match result: {asin_match}")
-        if not asin_match:
+        if asin_match:
+            asin_q = asin_match.group(1) or asin_match.group(2)
+        else:
+            asin_q = None
+        
+        if not asin_q:
             print("DEBUG: No ASIN match found in prompt")
             st.session_state["agent_error"] = "Invalid ASIN format. Please provide an ASIN (6-15 characters, letters and numbers)."
             return "error"
-        
-        asin_q = asin_match.group(1)
         
         # Find ASIN report using smart detection
         asin_report = _smart_find_asin_report(dataframes, company_name)
@@ -3344,6 +3351,10 @@ def tool_units_sold_for_specific_asin(dataframes: Dict[str, pd.DataFrame], promp
 
 def tool_sales_for_specific_asin(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """Show sales for a specific ASIN."""
+    # Clear previous "Did you mean?" messages
+    if "sales_did_you_mean" in st.session_state:
+        del st.session_state["sales_did_you_mean"]
+    
     try:
         # Extract ASIN from prompt - look for ASIN after "ASIN" keyword or B0/B1 patterns
         asin_match = re.search(r'ASIN\s+([A-Z0-9]{6,15})|(B[0-9A-Z]{8,10})', prompt.upper())
@@ -3428,6 +3439,10 @@ def tool_sales_for_specific_asin(dataframes: Dict[str, pd.DataFrame], prompt: st
 
 def tool_total_fees_for_specific_asin(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """Show total fees for a specific ASIN."""
+    # Clear previous "Did you mean?" messages
+    if "fees_did_you_mean" in st.session_state:
+        del st.session_state["fees_did_you_mean"]
+    
     try:
         # Extract ASIN from prompt - look for ASIN after "ASIN" keyword or B0/B1 patterns
         asin_match = re.search(r'ASIN\s+([A-Z0-9]{6,15})|(B[0-9A-Z]{8,10})', prompt.upper())
@@ -3523,6 +3538,10 @@ def tool_total_fees_for_specific_asin(dataframes: Dict[str, pd.DataFrame], promp
 
 def tool_gross_profit_for_specific_asin(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """Show gross profit for a specific ASIN."""
+    # Clear previous "Did you mean?" messages
+    if "gp_did_you_mean" in st.session_state:
+        del st.session_state["gp_did_you_mean"]
+    
     try:
         # Extract ASIN from prompt - look for ASIN after "ASIN" keyword or B0/B1 patterns
         asin_match = re.search(r'ASIN\s+([A-Z0-9]{6,15})|(B[0-9A-Z]{8,10})', prompt.upper())
@@ -3605,6 +3624,10 @@ def tool_gross_profit_for_specific_asin(dataframes: Dict[str, pd.DataFrame], pro
 
 def tool_gross_margin_for_specific_asin(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """Show gross margin for a specific ASIN."""
+    # Clear previous "Did you mean?" messages
+    if "gm_did_you_mean" in st.session_state:
+        del st.session_state["gm_did_you_mean"]
+    
     try:
         # Extract ASIN from prompt - look for ASIN after "ASIN" keyword or B0/B1 patterns
         asin_match = re.search(r'ASIN\s+([A-Z0-9]{6,15})|(B[0-9A-Z]{8,10})', prompt.upper())
