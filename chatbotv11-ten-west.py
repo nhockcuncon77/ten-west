@@ -5657,45 +5657,76 @@ with st.chat_message("assistant"):
         )
 
     elif st.session_state.get("suppressed_table") is not None:
-        st.write(
-            f"While I cannot show if an ASIN was suppressed on a past date, "
-            f"a low Buy Box percentage can indicate if there is an issue with the listing. "
-            f"Here are the ASINs with Buy Box percentages below 80% from {st.session_state['suppressed_period']}:"
-        )
+        response_text = (f"While I cannot show if an ASIN was suppressed on a past date, "
+                       f"a low Buy Box percentage can indicate if there is an issue with the listing. "
+                       f"Here are the ASINs with Buy Box percentages below 80% from {st.session_state['suppressed_period']}:")
+        st.write(response_text)
         st.dataframe(st.session_state["suppressed_table"], use_container_width=True)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(
+            response_text, 
+            response_type="dataframe", 
+            dataframe=st.session_state["suppressed_table"],
+            text=response_text,
+            source_file=st.session_state.get("business_file")
+        )
 
     elif st.session_state.get("currently_suppressed_table") is not None:
-        st.write(
-            f"Here are the ASINs with a 0% Buy Box from {st.session_state['currently_suppressed_period']}:"
-        )
+        response_text = f"Here are the ASINs with a 0% Buy Box from {st.session_state['currently_suppressed_period']}:"
+        st.write(response_text)
         st.dataframe(st.session_state["currently_suppressed_table"], use_container_width=True)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(
+            response_text, 
+            response_type="dataframe", 
+            dataframe=st.session_state["currently_suppressed_table"],
+            text=response_text,
+            source_file=st.session_state.get("business_file")
+        )
 
     elif st.session_state.get("sales_lost_table") is not None:
-        st.write(
-            f"The amount of sales lost to other sellers from {st.session_state['sales_lost_period']} was ${st.session_state['sales_lost_total']:,.2f}."
-        )
+        response_text = f"The amount of sales lost to other sellers from {st.session_state['sales_lost_period']} was ${st.session_state['sales_lost_total']:,.2f}."
+        st.write(response_text)
         st.dataframe(st.session_state["sales_lost_table"], use_container_width=True)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(
+            response_text, 
+            response_type="dataframe", 
+            dataframe=st.session_state["sales_lost_table"],
+            text=response_text,
+            source_file=st.session_state.get("business_file")
+        )
 
     elif st.session_state.get("profit_lost_table") is not None:
-        st.write(
-            f"The amount of gross profit lost to other sellers from {st.session_state['profit_lost_period']} was ${st.session_state['profit_lost_total']:,.2f}."
-        )
+        response_text = f"The amount of gross profit lost to other sellers from {st.session_state['profit_lost_period']} was ${st.session_state['profit_lost_total']:,.2f}."
+        st.write(response_text)
         st.dataframe(st.session_state["profit_lost_table"], use_container_width=True)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(
+            response_text, 
+            response_type="dataframe", 
+            dataframe=st.session_state["profit_lost_table"],
+            text=response_text,
+            source_file=st.session_state.get("business_file")
+        )
 
     elif st.session_state.get("gm_underperformers_table") is not None:
-        st.write(
-            f"The following ASINs have a gross margin less than planned for the settlement period {settlement_period}:")
+        response_text = f"The following ASINs have a gross margin less than planned for the settlement period {settlement_period}:"
+        st.write(response_text)
         st.dataframe(st.session_state["gm_underperformers_table"], use_container_width=True)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(
+            response_text, 
+            response_type="dataframe", 
+            dataframe=st.session_state["gm_underperformers_table"],
+            text=response_text,
+            source_file=st.session_state.get("business_file")
+        )
 
     elif st.session_state.get("gp_all_asins") is not None:
         response_text = f"Gross profit for all ASINs was ${st.session_state['gp_all_asins']:,.2f} from {st.session_state['gp_all_asins_period']}."
