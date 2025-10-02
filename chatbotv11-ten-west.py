@@ -2601,13 +2601,6 @@ def tool_gross_profit_for_all_asins(dataframes: Dict[str, pd.DataFrame], prompt:
     Examples: 'Show gross profit for all ASINs'.
     Returns formatted string like chatbotv10.py.
     """
-    # Clear gross margin results to prevent cross-contamination
-    if "gm_all_asins" in st.session_state:
-        del st.session_state["gm_all_asins"]
-    if "gm_all_asins_period" in st.session_state:
-        del st.session_state["gm_all_asins_period"]
-    if "gm_all_asins_string" in st.session_state:
-        del st.session_state["gm_all_asins_string"]
     
     try:
         # Use the exact same logic as chatbotv10.py
@@ -2628,12 +2621,10 @@ def tool_gross_profit_for_all_asins(dataframes: Dict[str, pd.DataFrame], prompt:
         formatted_total    = f"${total_gp:,.2f}"
         formatted_per_unit = f"${per_unit_gp:,.2f}"
         
-        # Store the formatted string in session state
-        st.session_state["gp_all_asins_string"] = (
-            f"The overall gross profit for all ASINs was {formatted_total} "
-            f"({formatted_per_unit} per unit) "
-            f"in the settlement period {settlement_period}."
-        )
+        # Store the result in session state (matching UI expectations)
+        st.session_state["gp_all_asins"] = total_gp
+        st.session_state["gp_all_asins_per_unit"] = per_unit_gp
+        st.session_state["gp_all_asins_period"] = settlement_period
         
         return "ok"
         
@@ -2688,15 +2679,6 @@ def tool_gross_margin_for_all_asins(dataframes: Dict[str, pd.DataFrame], prompt:
     Examples: 'Show gross margin for all ASINs'.
     Returns formatted string with gross margin percentage.
     """
-    # Clear gross profit results to prevent cross-contamination
-    if "gp_all_asins" in st.session_state:
-        del st.session_state["gp_all_asins"]
-    if "gp_all_asins_per_unit" in st.session_state:
-        del st.session_state["gp_all_asins_per_unit"]
-    if "gp_all_asins_period" in st.session_state:
-        del st.session_state["gp_all_asins_period"]
-    if "gp_all_asins_string" in st.session_state:
-        del st.session_state["gp_all_asins_string"]
     
     try:
         # Find the ASIN aggregated report using smart detection
@@ -2754,8 +2736,8 @@ def tool_gross_margin_for_all_asins(dataframes: Dict[str, pd.DataFrame], prompt:
             f"in the settlement period {settlement_period}."
         )
         
-        # Store in session state for display
-        st.session_state["gm_all_asins_string"] = formatted_string
+        # Store in session state for display (matching UI expectations)
+        st.session_state["gm_all_asins"] = overall_margin
         st.session_state["gm_all_asins_period"] = settlement_period
         
         return "ok"
@@ -3311,9 +3293,6 @@ def tool_fees_higher_than_plan(dataframes: Dict[str, pd.DataFrame], prompt: str,
 
 def tool_units_sold_for_specific_asin(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """Show units sold for a specific ASIN."""
-    # Clear previous "Did you mean?" messages
-    if "units_sold_did_you_mean" in st.session_state:
-        del st.session_state["units_sold_did_you_mean"]
     
     print(f"DEBUG: Function called with prompt: '{prompt}'")
     try:
@@ -3400,9 +3379,6 @@ def tool_units_sold_for_specific_asin(dataframes: Dict[str, pd.DataFrame], promp
 
 def tool_sales_for_specific_asin(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """Show sales for a specific ASIN."""
-    # Clear previous "Did you mean?" messages
-    if "sales_did_you_mean" in st.session_state:
-        del st.session_state["sales_did_you_mean"]
     
     try:
         # Extract ASIN from prompt - look for ASIN after "ASIN" keyword or B0/B1 patterns
@@ -3488,9 +3464,6 @@ def tool_sales_for_specific_asin(dataframes: Dict[str, pd.DataFrame], prompt: st
 
 def tool_total_fees_for_specific_asin(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """Show total fees for a specific ASIN."""
-    # Clear previous "Did you mean?" messages
-    if "fees_did_you_mean" in st.session_state:
-        del st.session_state["fees_did_you_mean"]
     
     try:
         # Extract ASIN from prompt - look for ASIN after "ASIN" keyword or B0/B1 patterns
@@ -3587,9 +3560,6 @@ def tool_total_fees_for_specific_asin(dataframes: Dict[str, pd.DataFrame], promp
 
 def tool_gross_profit_for_specific_asin(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """Show gross profit for a specific ASIN."""
-    # Clear previous "Did you mean?" messages
-    if "gp_did_you_mean" in st.session_state:
-        del st.session_state["gp_did_you_mean"]
     
     try:
         # Extract ASIN from prompt - look for ASIN after "ASIN" keyword or B0/B1 patterns
@@ -3673,9 +3643,6 @@ def tool_gross_profit_for_specific_asin(dataframes: Dict[str, pd.DataFrame], pro
 
 def tool_gross_margin_for_specific_asin(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """Show gross margin for a specific ASIN."""
-    # Clear previous "Did you mean?" messages
-    if "gm_did_you_mean" in st.session_state:
-        del st.session_state["gm_did_you_mean"]
     
     try:
         # Extract ASIN from prompt - look for ASIN after "ASIN" keyword or B0/B1 patterns
@@ -5435,12 +5402,7 @@ for message in st.session_state.conversation_history:
             else:
                 st.write(message["content"])
 
-# Add current user message to history and display it
-st.session_state.conversation_history.append({"role": "user", "content": user_prompt})
-with st.chat_message("user"):
-    st.write(user_prompt)
-
-# clear previous outputs (but keep conversation history)
+# clear previous outputs (but keep conversation history) - MUST happen before agent invocation
 for k in ("conv_table", "conv_period", "avg_cr", "avg_period_display", "agent_error", "business_file", 
           "gross_sales_table", "gross_sales_period", "gross_sales_total", "gross_sales_days",
           "gross_sales_total_only", "gross_sales_period_only", "net_sales_table", "net_sales_period",
@@ -5485,6 +5447,11 @@ for k in ("conv_table", "conv_period", "avg_cr", "avg_period_display", "agent_er
           "gp_asin", "gp_amount", "gp_per_unit", "gp_period",
           "gm_asin", "gm_margin", "gm_period"):
     st.session_state.pop(k, None)
+
+# Add current user message to history and display it
+st.session_state.conversation_history.append({"role": "user", "content": user_prompt})
+with st.chat_message("user"):
+    st.write(user_prompt)
 
 # Check data availability before invoking agent
 data_availability = check_data_availability()
