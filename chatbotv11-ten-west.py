@@ -2622,11 +2622,7 @@ def tool_gross_profit_for_all_asins(dataframes: Dict[str, pd.DataFrame], prompt:
         formatted_per_unit = f"${per_unit_gp:,.2f}"
         
         # Store the formatted string in session state (exactly like chatbotv11.py)
-        st.session_state["gp_all_asins_string"] = (
-            f"The overall gross profit for all ASINs was {formatted_total} "
-            f"({formatted_per_unit} per unit) "
-            f"in the settlement period {settlement_period}."
-        )
+        st.session_state["gp_all_asins_string"] = f"The overall gross profit for all ASINs was {formatted_total} ({formatted_per_unit} per unit) in the settlement period {settlement_period}."
         
         return "ok"
         
@@ -5417,8 +5413,8 @@ for k in ("conv_table", "conv_period", "avg_cr", "avg_period_display", "agent_er
           "currently_suppressed_table", "currently_suppressed_period", 
           "sales_lost_table", "sales_lost_period", "sales_lost_total", 
           "profit_lost_table", "profit_lost_period", "profit_lost_total",
-          "gm_underperformers_table", "gm_underperformers_period", "gp_all_asins", "gp_all_asins_per_unit", "gp_all_asins_period",
-          "gp_all_brands", "gp_all_brands_per_unit", "gp_all_brands_period", "gm_all_asins", "gm_all_asins_period",
+          "gm_underperformers_table", "gm_underperformers_period", "gp_all_asins", "gp_all_asins_per_unit", "gp_all_asins_period", "gp_all_asins_string",
+          "gp_all_brands", "gp_all_brands_per_unit", "gp_all_brands_period", "gp_all_brands_string", "gm_all_asins", "gm_all_asins_period", "gm_all_asins_string",
           "sales_desc_table", "sales_desc_period", "sales_desc_string", "gp_desc_table", "gp_desc_period", "gp_desc_string", 
           "gm_desc_table", "gm_desc_period", "gm_desc_string",
           "brands_sales_desc_table", "brands_sales_desc_period", "brands_sales_desc_string", 
