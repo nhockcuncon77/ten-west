@@ -2621,10 +2621,12 @@ def tool_gross_profit_for_all_asins(dataframes: Dict[str, pd.DataFrame], prompt:
         formatted_total    = f"${total_gp:,.2f}"
         formatted_per_unit = f"${per_unit_gp:,.2f}"
         
-        # Store the result in session state (matching UI expectations)
-        st.session_state["gp_all_asins"] = total_gp
-        st.session_state["gp_all_asins_per_unit"] = per_unit_gp
-        st.session_state["gp_all_asins_period"] = settlement_period
+        # Store the formatted string in session state (exactly like chatbotv11.py)
+        st.session_state["gp_all_asins_string"] = (
+            f"The overall gross profit for all ASINs was {formatted_total} "
+            f"({formatted_per_unit} per unit) "
+            f"in the settlement period {settlement_period}."
+        )
         
         return "ok"
         
@@ -5727,13 +5729,6 @@ with st.chat_message("assistant"):
             text=response_text,
             source_file=st.session_state.get("business_file")
         )
-
-    elif st.session_state.get("gp_all_asins") is not None:
-        response_text = f"Gross profit for all ASINs was ${st.session_state['gp_all_asins']:,.2f} from {st.session_state['gp_all_asins_period']}."
-        st.write(response_text)
-        if st.session_state.get("business_file"):
-            st.caption(f"Source file: {st.session_state['business_file']}")
-        store_assistant_response(response_text, source_file=st.session_state.get("business_file"))
 
     elif st.session_state.get("gp_all_brands") is not None:
         response_text = f"Gross profit for all brands was ${st.session_state['gp_all_brands']:,.2f} from {st.session_state['gp_all_brands_period']}."
