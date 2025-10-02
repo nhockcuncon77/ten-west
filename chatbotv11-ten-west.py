@@ -5698,267 +5698,464 @@ with st.chat_message("assistant"):
             st.caption(f"Source file: {st.session_state['business_file']}")
 
     elif st.session_state.get("gp_all_asins") is not None:
-        st.write(
-            f"Gross profit for all ASINs was ${st.session_state['gp_all_asins']:,.2f} from {st.session_state['gp_all_asins_period']}.")
+        response_text = f"Gross profit for all ASINs was ${st.session_state['gp_all_asins']:,.2f} from {st.session_state['gp_all_asins_period']}."
+        st.write(response_text)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(response_text, source_file=st.session_state.get("business_file"))
 
     elif st.session_state.get("gp_all_brands") is not None:
-        st.write(
-            f"Gross profit for all brands was ${st.session_state['gp_all_brands']:,.2f} from {st.session_state['gp_all_brands_period']}.")
+        response_text = f"Gross profit for all brands was ${st.session_state['gp_all_brands']:,.2f} from {st.session_state['gp_all_brands_period']}."
+        st.write(response_text)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(response_text, source_file=st.session_state.get("business_file"))
 
     elif st.session_state.get("gm_all_asins") is not None:
-        st.write(
-            f"Gross margin for all ASINs was {st.session_state['gm_all_asins']:.2f}% from {st.session_state['gm_all_asins_period']}.")
+        response_text = f"Gross margin for all ASINs was {st.session_state['gm_all_asins']:.2f}% from {st.session_state['gm_all_asins_period']}."
+        st.write(response_text)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(response_text, source_file=st.session_state.get("business_file"))
 
     elif st.session_state.get("sales_desc_table") is not None:
         st.text(st.session_state["sales_desc_string"])
         st.dataframe(st.session_state["sales_desc_table"], use_container_width=True)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(
+            st.session_state["sales_desc_string"], 
+            response_type="dataframe", 
+            dataframe=st.session_state["sales_desc_table"],
+            text=st.session_state["sales_desc_string"],
+            source_file=st.session_state.get("business_file")
+        )
 
     elif st.session_state.get("gp_desc_table") is not None:
         st.text(st.session_state["gp_desc_string"])
         st.dataframe(st.session_state["gp_desc_table"], use_container_width=True)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(
+            st.session_state["gp_desc_string"], 
+            response_type="dataframe", 
+            dataframe=st.session_state["gp_desc_table"],
+            text=st.session_state["gp_desc_string"],
+            source_file=st.session_state.get("business_file")
+        )
 
     elif st.session_state.get("gm_desc_table") is not None:
         st.text(st.session_state["gm_desc_string"])
         st.dataframe(st.session_state["gm_desc_table"], use_container_width=True)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(
+            st.session_state["gm_desc_string"], 
+            response_type="dataframe", 
+            dataframe=st.session_state["gm_desc_table"],
+            text=st.session_state["gm_desc_string"],
+            source_file=st.session_state.get("business_file")
+        )
 
     elif st.session_state.get("brands_sales_desc_table") is not None:
         st.text(st.session_state["brands_sales_desc_string"])
         st.dataframe(st.session_state["brands_sales_desc_table"], use_container_width=True)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(
+            st.session_state["brands_sales_desc_string"], 
+            response_type="dataframe", 
+            dataframe=st.session_state["brands_sales_desc_table"],
+            text=st.session_state["brands_sales_desc_string"],
+            source_file=st.session_state.get("business_file")
+        )
 
     elif st.session_state.get("brands_gp_desc_table") is not None:
         st.text(st.session_state["brands_gp_desc_string"])
         st.dataframe(st.session_state["brands_gp_desc_table"], use_container_width=True)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(
+            st.session_state["brands_gp_desc_string"], 
+            response_type="dataframe", 
+            dataframe=st.session_state["brands_gp_desc_table"],
+            text=st.session_state["brands_gp_desc_string"],
+            source_file=st.session_state.get("business_file")
+        )
 
     elif st.session_state.get("brands_gm_desc_table") is not None:
         st.text(st.session_state["brands_gm_desc_string"])
         st.dataframe(st.session_state["brands_gm_desc_table"], use_container_width=True)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(
+            st.session_state["brands_gm_desc_string"], 
+            response_type="dataframe", 
+            dataframe=st.session_state["brands_gm_desc_table"],
+            text=st.session_state["brands_gm_desc_string"],
+            source_file=st.session_state.get("business_file")
+        )
 
     elif st.session_state.get("top_brands_sales_table") is not None:
         st.text(st.session_state["top_brands_sales_string"])
         st.dataframe(st.session_state["top_brands_sales_table"], use_container_width=True)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(
+            st.session_state["top_brands_sales_string"], 
+            response_type="dataframe", 
+            dataframe=st.session_state["top_brands_sales_table"],
+            text=st.session_state["top_brands_sales_string"],
+            source_file=st.session_state.get("business_file")
+        )
 
     elif st.session_state.get("top_asins_sales_table") is not None:
         st.text(st.session_state["top_asins_sales_string"])
         st.dataframe(st.session_state["top_asins_sales_table"], use_container_width=True)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(
+            st.session_state["top_asins_sales_string"], 
+            response_type="dataframe", 
+            dataframe=st.session_state["top_asins_sales_table"],
+            text=st.session_state["top_asins_sales_string"],
+            source_file=st.session_state.get("business_file")
+        )
 
     elif st.session_state.get("fees_higher_plan_table") is not None:
-        st.write(
-            f"ASINs with average total fees higher than plan:")
+        response_text = f"ASINs with average total fees higher than plan:"
+        st.write(response_text)
         st.dataframe(st.session_state["fees_higher_plan_table"], use_container_width=True)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(
+            response_text, 
+            response_type="dataframe", 
+            dataframe=st.session_state["fees_higher_plan_table"],
+            text=response_text,
+            source_file=st.session_state.get("business_file")
+        )
 
     elif st.session_state.get("top_brands_table") is not None:
-        st.write(
-            f"Top {st.session_state['top_brands_count']} brands by sales:")
+        response_text = f"Top {st.session_state['top_brands_count']} brands by sales:"
+        st.write(response_text)
         st.dataframe(st.session_state["top_brands_table"], use_container_width=True)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(
+            response_text, 
+            response_type="dataframe", 
+            dataframe=st.session_state["top_brands_table"],
+            text=response_text,
+            source_file=st.session_state.get("business_file")
+        )
 
     elif st.session_state.get("top_asins_table") is not None:
-        st.write(
-            f"Top {st.session_state['top_asins_count']} ASINs by sales:")
+        response_text = f"Top {st.session_state['top_asins_count']} ASINs by sales:"
+        st.write(response_text)
         st.dataframe(st.session_state["top_asins_table"], use_container_width=True)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(
+            response_text, 
+            response_type="dataframe", 
+            dataframe=st.session_state["top_asins_table"],
+            text=response_text,
+            source_file=st.session_state.get("business_file")
+        )
 
     elif st.session_state.get("fees_all_asins_table") is not None:
-        st.write(
-            f"Fees for all ASINs:")
+        response_text = f"Fees for all ASINs:"
+        st.write(response_text)
         st.dataframe(st.session_state["fees_all_asins_table"], use_container_width=True)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(
+            response_text, 
+            response_type="dataframe", 
+            dataframe=st.session_state["fees_all_asins_table"],
+            text=response_text,
+            source_file=st.session_state.get("business_file")
+        )
 
     elif st.session_state.get("fees_all_brands_table") is not None:
-        st.write(
-            f"Fees for all brands:")
+        response_text = f"Fees for all brands:"
+        st.write(response_text)
         st.dataframe(st.session_state["fees_all_brands_table"], use_container_width=True)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(
+            response_text, 
+            response_type="dataframe", 
+            dataframe=st.session_state["fees_all_brands_table"],
+            text=response_text,
+            source_file=st.session_state.get("business_file")
+        )
 
     elif st.session_state.get("gp_all_asins_string") is not None:
         st.text(st.session_state["gp_all_asins_string"])
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(st.session_state["gp_all_asins_string"], source_file=st.session_state.get("business_file"))
 
     elif st.session_state.get("gp_all_brands_string") is not None:
         st.text(st.session_state["gp_all_brands_string"])
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(st.session_state["gp_all_brands_string"], source_file=st.session_state.get("business_file"))
 
     elif st.session_state.get("gm_all_asins_string") is not None:
         st.text(st.session_state["gm_all_asins_string"])
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(st.session_state["gm_all_asins_string"], source_file=st.session_state.get("business_file"))
 
     elif st.session_state.get("gm_all_brands_string") is not None:
         st.text(st.session_state["gm_all_brands_string"])
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(st.session_state["gm_all_brands_string"], source_file=st.session_state.get("business_file"))
 
     elif st.session_state.get("sales_desc_table") is not None:
         st.text(st.session_state["sales_desc_string"])
         st.dataframe(st.session_state["sales_desc_table"], use_container_width=True)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(
+            st.session_state["sales_desc_string"], 
+            response_type="dataframe", 
+            dataframe=st.session_state["sales_desc_table"],
+            text=st.session_state["sales_desc_string"],
+            source_file=st.session_state.get("business_file")
+        )
 
     elif st.session_state.get("gp_desc_table") is not None:
         st.text(st.session_state["gp_desc_string"])
         st.dataframe(st.session_state["gp_desc_table"], use_container_width=True)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(
+            st.session_state["gp_desc_string"], 
+            response_type="dataframe", 
+            dataframe=st.session_state["gp_desc_table"],
+            text=st.session_state["gp_desc_string"],
+            source_file=st.session_state.get("business_file")
+        )
 
     elif st.session_state.get("units_sold_asin") is not None:
         # Display "Did you mean?" message if available
         if st.session_state.get("units_sold_did_you_mean"):
             st.info(st.session_state["units_sold_did_you_mean"])
         
-        st.write(
-            f"You sold {st.session_state['units_sold_count']:,} units of ASIN {st.session_state['units_sold_asin']} "
-            f"in the settlement period {st.session_state['units_sold_period']}.")
+        response_text = (f"You sold {st.session_state['units_sold_count']:,} units of ASIN {st.session_state['units_sold_asin']} "
+                        f"in the settlement period {st.session_state['units_sold_period']}.")
+        st.write(response_text)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(response_text, source_file=st.session_state.get("business_file"))
 
     elif st.session_state.get("sales_asin") is not None:
         # Display "Did you mean?" message if available
         if st.session_state.get("sales_did_you_mean"):
             st.info(st.session_state["sales_did_you_mean"])
         
-        st.write(
-            f"Sales for ASIN {st.session_state['sales_asin']} were ${st.session_state['sales_amount']:,.2f} "
-            f"({st.session_state['sales_units']:,} number of units) in the settlement period {st.session_state['sales_period']}.")
+        response_text = (f"Sales for ASIN {st.session_state['sales_asin']} were ${st.session_state['sales_amount']:,.2f} "
+                        f"({st.session_state['sales_units']:,} number of units) in the settlement period {st.session_state['sales_period']}.")
+        st.write(response_text)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(response_text, source_file=st.session_state.get("business_file"))
 
     elif st.session_state.get("fees_asin") is not None:
         # Display "Did you mean?" message if available
         if st.session_state.get("fees_did_you_mean"):
             st.info(st.session_state["fees_did_you_mean"])
         
-        st.text(
-            f"The total fees for ASIN {st.session_state['fees_asin']} were ${st.session_state['fees_total']:,.2f} (${st.session_state['fees_per_unit']:.2f} per unit) "
-            f"in the settlement period {st.session_state['fees_period']}.")
+        response_text = (f"The total fees for ASIN {st.session_state['fees_asin']} were ${st.session_state['fees_total']:,.2f} (${st.session_state['fees_per_unit']:.2f} per unit) "
+                        f"in the settlement period {st.session_state['fees_period']}.")
+        st.text(response_text)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(response_text, source_file=st.session_state.get("business_file"))
 
     elif st.session_state.get("gp_asin") is not None:
         # Display "Did you mean?" message if available
         if st.session_state.get("gp_did_you_mean"):
             st.info(st.session_state["gp_did_you_mean"])
         
-        st.text(
-            f"The gross profit for ASIN {st.session_state['gp_asin']} was ${st.session_state['gp_amount']:,.2f} "
-            f"(${st.session_state['gp_per_unit']:.2f} per unit) in the settlement period {st.session_state['gp_period']}.")
+        response_text = (f"The gross profit for ASIN {st.session_state['gp_asin']} was ${st.session_state['gp_amount']:,.2f} "
+                        f"(${st.session_state['gp_per_unit']:.2f} per unit) in the settlement period {st.session_state['gp_period']}.")
+        st.text(response_text)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(response_text, source_file=st.session_state.get("business_file"))
 
     elif st.session_state.get("gm_asin") is not None:
         # Display "Did you mean?" message if available
         if st.session_state.get("gm_did_you_mean"):
             st.info(st.session_state["gm_did_you_mean"])
         
-        st.write(
-            f"The gross margin for ASIN {st.session_state['gm_asin']} was {st.session_state['gm_margin']} "
-            f"in the settlement period {st.session_state['gm_period']}.")
+        response_text = (f"The gross margin for ASIN {st.session_state['gm_asin']} was {st.session_state['gm_margin']} "
+                        f"in the settlement period {st.session_state['gm_period']}.")
+        st.write(response_text)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(response_text, source_file=st.session_state.get("business_file"))
 
     elif st.session_state.get("top_brands_gp_table") is not None:
         st.text(st.session_state["top_brands_gp_string"])
         st.dataframe(st.session_state["top_brands_gp_table"], use_container_width=True)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(
+            st.session_state["top_brands_gp_string"], 
+            response_type="dataframe", 
+            dataframe=st.session_state["top_brands_gp_table"],
+            text=st.session_state["top_brands_gp_string"],
+            source_file=st.session_state.get("business_file")
+        )
 
     elif st.session_state.get("top_brands_gm_table") is not None:
         st.text(st.session_state["top_brands_gm_string"])
         st.dataframe(st.session_state["top_brands_gm_table"], use_container_width=True)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(
+            st.session_state["top_brands_gm_string"], 
+            response_type="dataframe", 
+            dataframe=st.session_state["top_brands_gm_table"],
+            text=st.session_state["top_brands_gm_string"],
+            source_file=st.session_state.get("business_file")
+        )
 
     elif st.session_state.get("top_asins_gp_table") is not None:
         st.text(st.session_state["top_asins_gp_string"])
         st.dataframe(st.session_state["top_asins_gp_table"], use_container_width=True)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(
+            st.session_state["top_asins_gp_string"], 
+            response_type="dataframe", 
+            dataframe=st.session_state["top_asins_gp_table"],
+            text=st.session_state["top_asins_gp_string"],
+            source_file=st.session_state.get("business_file")
+        )
 
     elif st.session_state.get("top_asins_gm_table") is not None:
         st.text(st.session_state["top_asins_gm_string"])
         st.dataframe(st.session_state["top_asins_gm_table"], use_container_width=True)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(
+            st.session_state["top_asins_gm_string"], 
+            response_type="dataframe", 
+            dataframe=st.session_state["top_asins_gm_table"],
+            text=st.session_state["top_asins_gm_string"],
+            source_file=st.session_state.get("business_file")
+        )
 
     elif st.session_state.get("total_brands_table") is not None:
         st.text(st.session_state["total_brands_string"])
         st.dataframe(st.session_state["total_brands_table"], use_container_width=True)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(
+            st.session_state["total_brands_string"], 
+            response_type="dataframe", 
+            dataframe=st.session_state["total_brands_table"],
+            text=st.session_state["total_brands_string"],
+            source_file=st.session_state.get("business_file")
+        )
 
     elif st.session_state.get("orders_sales_lower_table") is not None:
         st.text(st.session_state["orders_sales_lower_string"])
         st.dataframe(st.session_state["orders_sales_lower_table"], use_container_width=True)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(
+            st.session_state["orders_sales_lower_string"], 
+            response_type="dataframe", 
+            dataframe=st.session_state["orders_sales_lower_table"],
+            text=st.session_state["orders_sales_lower_string"],
+            source_file=st.session_state.get("business_file")
+        )
 
     elif st.session_state.get("asins_avg_price_lower_table") is not None:
         st.text(st.session_state["asins_avg_price_lower_string"])
         st.dataframe(st.session_state["asins_avg_price_lower_table"], use_container_width=True)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(
+            st.session_state["asins_avg_price_lower_string"], 
+            response_type="dataframe", 
+            dataframe=st.session_state["asins_avg_price_lower_table"],
+            text=st.session_state["asins_avg_price_lower_string"],
+            source_file=st.session_state.get("business_file")
+        )
 
     elif st.session_state.get("asins_fees_higher_table") is not None:
         st.text(st.session_state["asins_fees_higher_string"])
         st.dataframe(st.session_state["asins_fees_higher_table"], use_container_width=True)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(
+            st.session_state["asins_fees_higher_string"], 
+            response_type="dataframe", 
+            dataframe=st.session_state["asins_fees_higher_table"],
+            text=st.session_state["asins_fees_higher_string"],
+            source_file=st.session_state.get("business_file")
+        )
 
     elif st.session_state.get("orders_fees_higher_table") is not None:
         st.text(st.session_state["orders_fees_higher_string"])
         st.dataframe(st.session_state["orders_fees_higher_table"], use_container_width=True)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(
+            st.session_state["orders_fees_higher_string"], 
+            response_type="dataframe", 
+            dataframe=st.session_state["orders_fees_higher_table"],
+            text=st.session_state["orders_fees_higher_string"],
+            source_file=st.session_state.get("business_file")
+        )
 
     elif st.session_state.get("orders_referral_fees_higher_table") is not None:
         st.text(st.session_state["orders_referral_fees_higher_string"])
         st.dataframe(st.session_state["orders_referral_fees_higher_table"], use_container_width=True)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(
+            st.session_state["orders_referral_fees_higher_string"], 
+            response_type="dataframe", 
+            dataframe=st.session_state["orders_referral_fees_higher_table"],
+            text=st.session_state["orders_referral_fees_higher_string"],
+            source_file=st.session_state.get("business_file")
+        )
 
     elif st.session_state.get("orders_fulfillment_fees_higher_table") is not None:
         st.text(st.session_state["orders_fulfillment_fees_higher_string"])
         st.dataframe(st.session_state["orders_fulfillment_fees_higher_table"], use_container_width=True)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
+        store_assistant_response(
+            st.session_state["orders_fulfillment_fees_higher_string"], 
+            response_type="dataframe", 
+            dataframe=st.session_state["orders_fulfillment_fees_higher_table"],
+            text=st.session_state["orders_fulfillment_fees_higher_string"],
+            source_file=st.session_state.get("business_file")
+        )
 
     elif st.session_state.get("settlement_period_definition") is not None:
         st.text(st.session_state["settlement_period_definition"])
+        store_assistant_response(st.session_state["settlement_period_definition"])
 
     elif st.session_state.get("settlement_period_timing") is not None:
         st.text(st.session_state["settlement_period_timing"])
+        store_assistant_response(st.session_state["settlement_period_timing"])
 
     elif st.session_state.get("settlement_period_reason") is not None:
         st.text(st.session_state["settlement_period_reason"])
+        store_assistant_response(st.session_state["settlement_period_reason"])
 
     else:
         # If we have training issues, show the training message instead of default response
