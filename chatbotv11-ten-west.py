@@ -52,7 +52,9 @@ SYSTEM_PROMPT = (
     "IMPORTANT: Pay close attention to whether the user is asking for: "
     "1) AGGREGATED ASIN summaries (average sales price across all orders for an ASIN) "
     "2) INDIVIDUAL ORDERS for a specific ASIN (order-by-order breakdown) "
-    "Tools return the data into Streamlit session_state; keep the final answer concise."
+    "Tools return the data into Streamlit session_state; keep the final answer concise. "
+    "CRITICAL: If you cannot find a suitable tool for the user's request, respond with exactly this message: "
+    "'I haven't been trained for that question. Please reach out to your account representative. In the meantime, would you like to know the answer to one of the following questions?\\n\\n- Show ASINs with average sales price below plan.\\n- Show the total sales lost to other sellers last week.\\n- Show ASINs with average total fees higher than plan for the last settlement period.'"
 )
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -959,7 +961,7 @@ def tool_asins_avg_price_below_plan(dataframes: Dict[str, pd.DataFrame], prompt:
             "Delta":               df["Delta"].map("${:,.2f}".format),
             "Units Sold":          df["Units_Sold"].map("{:,}".format),
             "Total Lost Revenue":  df["Total Lost Revenue"].map("${:,.2f}".format),
-        })
+            })
         out.index = range(1, len(out) + 1)
 
         # Calculate settlement period from the dataframes
@@ -996,7 +998,7 @@ def tool_orders_below_plan_for_asin(dataframes: Dict[str, pd.DataFrame], prompt:
         # also accept "for B0xxxx..." without the word "asin"
         m = re.search(r"\b(B0[0-9A-Z]{8})\b", prompt, flags=re.IGNORECASE)
     if not m:
-        st.session_state["agent_error"] = "Please include the ASIN (e.g., B0XXXXXXXX) in your request."
+        st.session_state["agent_error"] = "Please include the ASIN (e.g., XXXXXXXX) in your request."
         return "no_data"
 
     asin_q = m.group(1).upper()
@@ -1372,7 +1374,7 @@ def tool_gross_sales_for_specific_asin(dataframes: Dict[str, pd.DataFrame], prom
     )
     
     if not m:
-        st.session_state["agent_error"] = "Please include an ASIN (B0XXXXXXXX) and time period in your request."
+        st.session_state["agent_error"] = "Please include an ASIN (any alphanumeric format like XXXXXXXX) and time period in your request."
         return "no_data"
     
     asin_q = m.group(1).upper()
@@ -3292,18 +3294,15 @@ def tool_fees_higher_than_plan(dataframes: Dict[str, pd.DataFrame], prompt: str,
 def tool_units_sold_for_specific_asin(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
     """Show units sold for a specific ASIN."""
     
-    print(f"DEBUG: Function called with prompt: '{prompt}'")
     try:
         # Extract ASIN from prompt - look for ASIN after "ASIN" keyword or B0/B1 patterns
-        asin_match = re.search(r'ASIN\s+([A-Z0-9]{6,15})|(B[0-9A-Z]{8,10})', prompt.upper())
-        print(f"DEBUG: ASIN match result: {asin_match}")
+        asin_match = re.search(r'ASIN\s+([A-Z0-9]{6,15})|(B[0-9A-Z]{8,10})|FOR\s+([A-Z0-9]{6,15})', prompt.upper())
         if asin_match:
-            asin_q = asin_match.group(1) or asin_match.group(2)
+            asin_q = asin_match.group(1) or asin_match.group(2) or asin_match.group(3)
         else:
             asin_q = None
         
         if not asin_q:
-            print("DEBUG: No ASIN match found in prompt")
             st.session_state["agent_error"] = "Invalid ASIN format. Please provide an ASIN (6-15 characters, letters and numbers)."
             return "error"
         
@@ -3380,9 +3379,9 @@ def tool_sales_for_specific_asin(dataframes: Dict[str, pd.DataFrame], prompt: st
     
     try:
         # Extract ASIN from prompt - look for ASIN after "ASIN" keyword or B0/B1 patterns
-        asin_match = re.search(r'ASIN\s+([A-Z0-9]{6,15})|(B[0-9A-Z]{8,10})', prompt.upper())
+        asin_match = re.search(r'ASIN\s+([A-Z0-9]{6,15})|(B[0-9A-Z]{8,10})|FOR\s+([A-Z0-9]{6,15})', prompt.upper())
         if asin_match:
-            asin_q = asin_match.group(1) or asin_match.group(2)
+            asin_q = asin_match.group(1) or asin_match.group(2) or asin_match.group(3)
         else:
             asin_q = None
         
@@ -3465,7 +3464,7 @@ def tool_total_fees_for_specific_asin(dataframes: Dict[str, pd.DataFrame], promp
     
     try:
         # Extract ASIN from prompt - look for ASIN after "ASIN" keyword or B0/B1 patterns
-        asin_match = re.search(r'ASIN\s+([A-Z0-9]{6,15})|(B[0-9A-Z]{8,10})', prompt.upper())
+        asin_match = re.search(r'ASIN\s+([A-Z0-9]{6,15})|(B[0-9A-Z]{8,10})|FOR\s+([A-Z0-9]{6,15})', prompt.upper())
         if asin_match:
             asin_q = asin_match.group(1) or asin_match.group(2)
         else:
@@ -3561,7 +3560,7 @@ def tool_gross_profit_for_specific_asin(dataframes: Dict[str, pd.DataFrame], pro
     
     try:
         # Extract ASIN from prompt - look for ASIN after "ASIN" keyword or B0/B1 patterns
-        asin_match = re.search(r'ASIN\s+([A-Z0-9]{6,15})|(B[0-9A-Z]{8,10})', prompt.upper())
+        asin_match = re.search(r'ASIN\s+([A-Z0-9]{6,15})|(B[0-9A-Z]{8,10})|FOR\s+([A-Z0-9]{6,15})', prompt.upper())
         if asin_match:
             asin_q = asin_match.group(1) or asin_match.group(2)
         else:
@@ -3644,7 +3643,7 @@ def tool_gross_margin_for_specific_asin(dataframes: Dict[str, pd.DataFrame], pro
     
     try:
         # Extract ASIN from prompt - look for ASIN after "ASIN" keyword or B0/B1 patterns
-        asin_match = re.search(r'ASIN\s+([A-Z0-9]{6,15})|(B[0-9A-Z]{8,10})', prompt.upper())
+        asin_match = re.search(r'ASIN\s+([A-Z0-9]{6,15})|(B[0-9A-Z]{8,10})|FOR\s+([A-Z0-9]{6,15})', prompt.upper())
         if asin_match:
             asin_q = asin_match.group(1) or asin_match.group(2)
         else:
@@ -4219,13 +4218,13 @@ def tool_orders_fees_higher_plan(dataframes: Dict[str, pd.DataFrame], prompt: st
     """
     try:
         # Extract ASIN from prompt - look for ASIN after "ASIN" keyword or B0/B1 patterns
-        asin_match = re.search(r'ASIN\s+([A-Z0-9]{6,15})|(B[0-9A-Z]{8,10})', prompt.upper())
+        asin_match = re.search(r'ASIN\s+([A-Z0-9]{6,15})|(B[0-9A-Z]{8,10})|FOR\s+([A-Z0-9]{6,15})', prompt.upper())
         if asin_match:
             asin_q = asin_match.group(1) or asin_match.group(2)
         else:
             asin_q = None
         if not asin_match:
-            st.session_state["agent_error"] = "No valid ASIN found in the prompt. Please provide an ASIN in B0XXXXXXXX format."
+            st.session_state["agent_error"] = "No valid ASIN found in the prompt. Please provide an ASIN in any alphanumeric format like XXXXXXXX."
             return "error"
         
         asin_q = asin_match.group(1)
@@ -4381,13 +4380,13 @@ def tool_orders_referral_fees_higher_plan(dataframes: Dict[str, pd.DataFrame], p
     """
     try:
         # Extract ASIN from prompt - look for ASIN after "ASIN" keyword or B0/B1 patterns
-        asin_match = re.search(r'ASIN\s+([A-Z0-9]{6,15})|(B[0-9A-Z]{8,10})', prompt.upper())
+        asin_match = re.search(r'ASIN\s+([A-Z0-9]{6,15})|(B[0-9A-Z]{8,10})|FOR\s+([A-Z0-9]{6,15})', prompt.upper())
         if asin_match:
             asin_q = asin_match.group(1) or asin_match.group(2)
         else:
             asin_q = None
         if not asin_match:
-            st.session_state["agent_error"] = "No valid ASIN found in the prompt. Please provide an ASIN in B0XXXXXXXX format."
+            st.session_state["agent_error"] = "No valid ASIN found in the prompt. Please provide an ASIN in any alphanumeric format like XXXXXXXX."
             return "error"
         
         asin_q = asin_match.group(1)
@@ -4557,7 +4556,7 @@ def tool_orders_fulfillment_fees_higher_plan(dataframes: Dict[str, pd.DataFrame]
             flags=re.IGNORECASE
         )
         if not m_fba_orders:
-            st.session_state["agent_error"] = "Could not extract ASIN from the prompt. Please provide an ASIN in the format B0XXXXXXXX."
+            st.session_state["agent_error"] = "Could not extract ASIN from the prompt. Please provide an ASIN in any alphanumeric format like XXXXXXXX."
             return "error"
         
         asin_q = m_fba_orders.group(1).upper()
@@ -4795,9 +4794,10 @@ def build_agent() -> AgentExecutor:
             func=_create_tool_wrapper(tool_orders_below_plan_for_asin),
             description=(
                 "PRIORITY: Use this tool when user asks for INDIVIDUAL ORDERS where sales price was lower than plan for a SPECIFIC ASIN. "
-                "Examples: 'Show orders where the sales price was lower than plan for ASIN B0XXXXXXXX', "
-                "'Show individual orders below plan for ASIN B0XXXXXXXX'. "
-                "The prompt MUST include a specific ASIN (B0XXXXXXXX format). "
+                "Examples: 'Show orders where the sales price was lower than plan for ASIN XXXXXXXX', "
+                "'Show individual orders below plan for ASIN ABC123DEF', "
+                "'Show orders where the sales price was lower than plan for ASIN XYZ789GHI'. "
+                "The prompt MUST include a specific ASIN (any alphanumeric format like XXXXXXXX). "
                 "This shows individual order details, NOT aggregated ASIN summaries. "
                 "Returns 'ok' if a table was prepared."
             ),
@@ -4837,8 +4837,9 @@ def build_agent() -> AgentExecutor:
             func=_create_tool_wrapper(tool_gross_sales_for_specific_asin),
             description=(
                 "Use when user asks for gross sales for a SPECIFIC ASIN. "
-                "Examples: 'Show gross sales for ASIN B0XXXXXXXX for last week'. "
-                "The prompt MUST include both an ASIN (B0XXXXXXXX) and a time period. "
+                "Examples: 'Show gross sales for ASIN XXXXXXXX for last week', "
+                "'Show gross sales for ASIN ABC123DEF for last week'. "
+                "The prompt MUST include both an ASIN (any alphanumeric format like XXXXXXXX) and a time period. "
                 "Returns 'ok' if value was prepared."
             ),
         ),
@@ -5121,8 +5122,8 @@ def build_agent() -> AgentExecutor:
             func=_create_tool_wrapper(tool_units_sold_for_specific_asin),
             description=(
                 "Use when the user asks for units sold for a specific ASIN. "
-                "Examples: 'Show units sold for ASIN B0XXXXXXXX'. "
-                "The prompt MUST include a specific ASIN (B0XXXXXXXX format). "
+                "Examples: 'Show units sold for ASIN XXXXXXXX', 'Show units sold for ASIN ABC123DEF'. "
+                "The prompt MUST include a specific ASIN (any alphanumeric format like XXXXXXXX). "
                 "Returns 'ok' if value was prepared."
             ),
         ),
@@ -5132,10 +5133,10 @@ def build_agent() -> AgentExecutor:
             description=(
                 "Use when the user asks for sales for a specific ASIN. "
                 "Synonyms for 'sales': ATS, net sales, product sales, top line sales. "
-                "Examples: 'Show sales for ASIN B0XXXXXXXX', 'Show ATS for ASIN B0XXXXXXXX', "
-                "'Show net sales for ASIN B0XXXXXXXX', 'Show product sales for ASIN B0XXXXXXXX', "
-                "'Show top line sales for ASIN B0XXXXXXXX'. "
-                "The prompt MUST include a specific ASIN (B0XXXXXXXX format). "
+                "Examples: 'Show sales for ASIN XXXXXXXX', 'Show ATS for ASIN ABC123DEF', "
+                "'Show net sales for ASIN XYZ789GHI', 'Show product sales for ASIN 123ABC456', "
+                "'Show top line sales for ASIN DEF789JKL'. "
+                "The prompt MUST include a specific ASIN (any alphanumeric format like XXXXXXXX). "
                 "Returns 'ok' if value was prepared."
             ),
         ),
@@ -5144,8 +5145,8 @@ def build_agent() -> AgentExecutor:
             func=_create_tool_wrapper(tool_total_fees_for_specific_asin),
             description=(
                 "Use when the user asks for total fees for a specific ASIN. "
-                "Examples: 'Show total fees for ASIN B0XXXXXXXX'. "
-                "The prompt MUST include a specific ASIN (B0XXXXXXXX format). "
+                "Examples: 'Show total fees for ASIN XXXXXXXX', 'Show total fees for ASIN ABC123DEF'. "
+                "The prompt MUST include a specific ASIN (any alphanumeric format like XXXXXXXX). "
                 "Returns 'ok' if value was prepared."
             ),
         ),
@@ -5155,9 +5156,9 @@ def build_agent() -> AgentExecutor:
             description=(
                 "Use when the user asks for gross profit for a specific ASIN. "
                 "Synonyms for 'gross profit': RGP, GP. "
-                "Examples: 'Show gross profit for ASIN B0XXXXXXXX', 'Show RGP for ASIN B0XXXXXXXX', "
-                "'Show GP for ASIN B0XXXXXXXX'. "
-                "The prompt MUST include a specific ASIN (B0XXXXXXXX format). "
+                "Examples: 'Show gross profit for ASIN XXXXXXXX', 'Show RGP for ASIN ABC123DEF', "
+                "'Show GP for ASIN XYZ789GHI', 'Show gross profit for ASIN 123ABC456'. "
+                "The prompt MUST include a specific ASIN (any alphanumeric format like XXXXXXXX). "
                 "Returns 'ok' if value was prepared."
             ),
         ),
@@ -5167,8 +5168,9 @@ def build_agent() -> AgentExecutor:
             description=(
                 "Use when the user asks for gross margin for a specific ASIN. "
                 "Synonyms for 'gross margin': margin %. "
-                "Examples: 'Show gross margin for ASIN B0XXXXXXXX', 'Show margin % for ASIN B0XXXXXXXX'. "
-                "The prompt MUST include a specific ASIN (B0XXXXXXXX format). "
+                "Examples: 'Show gross margin for ASIN XXXXXXXX', 'Show margin % for ASIN ABC123DEF', "
+                "'Show gross margin for ASIN XYZ789GHI'. "
+                "The prompt MUST include a specific ASIN (any alphanumeric format like XXXXXXXX). "
                 "Returns 'ok' if value was prepared."
             ),
         ),
@@ -5243,10 +5245,11 @@ def build_agent() -> AgentExecutor:
                 "Use when the user asks for orders where the sales price was lower than plan for ASIN XYZ. "
                 "Synonyms for 'orders': sales. "
                 "Synonyms for 'sales price': average order value, AOV. "
-                "Examples: 'Show orders where the sales price was lower than plan for ASIN B0XXXXXXXX', "
-                "'Show sales where the average order value was lower than plan for ASIN B0XXXXXXXX', "
-                "'Show orders where the AOV was lower than plan for ASIN B0XXXXXXXX', "
-                "'Show sales where the sales price was lower than plan for ASIN B0XXXXXXXX'. "
+                "Examples: 'Show orders where the sales price was lower than plan for ASIN XXXXXXXX', "
+                "'Show sales where the average order value was lower than plan for ASIN ABC123DEF', "
+                "'Show orders where the AOV was lower than plan for ASIN XYZ789GHI', "
+                "'Show sales where the sales price was lower than plan for ASIN 123ABC456', "
+                "'Show orders where the sales price was lower than plan for ASIN DEF789JKL'. "
                 "Input: the full user prompt. Return 'ok' if table prepared."
             ),
         ),
@@ -5279,7 +5282,8 @@ def build_agent() -> AgentExecutor:
             func=_create_tool_wrapper(tool_orders_fees_higher_plan),
             description=(
                 "Use when the user asks for orders where fees were higher than plan for ASIN XYZ. "
-                "Examples: 'Show orders where fees were higher than plan for ASIN B0XXXXXXXX'. "
+                "Examples: 'Show orders where fees were higher than plan for ASIN XXXXXXXX', "
+                "'Show orders where fees were higher than plan for ASIN ABC123DEF'. "
                 "Input: the full user prompt. Return 'ok' if table prepared."
             ),
         ),
@@ -5288,7 +5292,8 @@ def build_agent() -> AgentExecutor:
             func=_create_tool_wrapper(tool_orders_referral_fees_higher_plan),
             description=(
                 "Use when the user asks for orders where referral fees were higher than plan for ASIN XYZ. "
-                "Examples: 'Show orders where referral fees were higher than plan for ASIN B0XXXXXXXX'. "
+                "Examples: 'Show orders where referral fees were higher than plan for ASIN XXXXXXXX', "
+                "'Show orders where referral fees were higher than plan for ASIN ABC123DEF'. "
                 "Input: the full user prompt. Return 'ok' if table prepared."
             ),
         ),
@@ -5297,7 +5302,8 @@ def build_agent() -> AgentExecutor:
             func=_create_tool_wrapper(tool_orders_fulfillment_fees_higher_plan),
             description=(
                 "Use when the user asks for orders where fulfillment fees were higher than plan for ASIN XYZ. "
-                "Examples: 'Show orders where fulfillment fees were higher than plan for ASIN B0XXXXXXXX'. "
+                "Examples: 'Show orders where fulfillment fees were higher than plan for ASIN XXXXXXXX', "
+                "'Show orders where fulfillment fees were higher than plan for ASIN ABC123DEF'. "
                 "Input: the full user prompt. Return 'ok' if table prepared."
             ),
         ),
@@ -5342,10 +5348,11 @@ def build_agent() -> AgentExecutor:
                 "human",
                 "User query:\n{input}\n\n"
                 "Choose exactly one tool if it matches the task. "
-                "CRITICAL: If the user mentions a specific ASIN (B0XXXXXXXX) and asks about 'orders', "
+                "CRITICAL: If the user mentions a specific ASIN (any alphanumeric format like XXXXXXXX) and asks about 'orders', "
                 "use orders_below_plan_for_asin. If they ask about 'ASINs' in general (no specific ASIN), "
                 "use asins_avg_price_below_plan. "
-                "Do not invent numbers; the tools will compute and store the results for the UI."
+                "Do not invent numbers; the tools will compute and store the results for the UI. "
+                "If no tool matches the user's request, respond with the exact fallback message specified in the system prompt."
             ),
             ("placeholder", "{agent_scratchpad}"),
         ]
@@ -5656,7 +5663,7 @@ with st.chat_message("assistant"):
 
     elif st.session_state.get("suppressed_table") is not None:
         response_text = (f"While I cannot show if an ASIN was suppressed on a past date, "
-                       f"a low Buy Box percentage can indicate if there is an issue with the listing. "
+            f"a low Buy Box percentage can indicate if there is an issue with the listing. "
                        f"Here are the ASINs with Buy Box percentages below 80% from {st.session_state['suppressed_period']}:")
         st.write(response_text)
         st.dataframe(st.session_state["suppressed_table"], use_container_width=True)
@@ -5970,7 +5977,7 @@ with st.chat_message("assistant"):
             st.info(st.session_state["units_sold_did_you_mean"])
         
         response_text = (f"You sold {st.session_state['units_sold_count']:,} units of ASIN {st.session_state['units_sold_asin']} "
-                        f"in the settlement period {st.session_state['units_sold_period']}.")
+            f"in the settlement period {st.session_state['units_sold_period']}.")
         st.write(response_text)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
@@ -5982,7 +5989,7 @@ with st.chat_message("assistant"):
             st.info(st.session_state["sales_did_you_mean"])
         
         response_text = (f"Sales for ASIN {st.session_state['sales_asin']} were ${st.session_state['sales_amount']:,.2f} "
-                        f"({st.session_state['sales_units']:,} number of units) in the settlement period {st.session_state['sales_period']}.")
+            f"({st.session_state['sales_units']:,} number of units) in the settlement period {st.session_state['sales_period']}.")
         st.write(response_text)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
@@ -5994,7 +6001,7 @@ with st.chat_message("assistant"):
             st.info(st.session_state["fees_did_you_mean"])
         
         response_text = (f"The total fees for ASIN {st.session_state['fees_asin']} were ${st.session_state['fees_total']:,.2f} (${st.session_state['fees_per_unit']:.2f} per unit) "
-                        f"in the settlement period {st.session_state['fees_period']}.")
+            f"in the settlement period {st.session_state['fees_period']}.")
         st.text(response_text)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
@@ -6006,7 +6013,7 @@ with st.chat_message("assistant"):
             st.info(st.session_state["gp_did_you_mean"])
         
         response_text = (f"The gross profit for ASIN {st.session_state['gp_asin']} was ${st.session_state['gp_amount']:,.2f} "
-                        f"(${st.session_state['gp_per_unit']:.2f} per unit) in the settlement period {st.session_state['gp_period']}.")
+            f"(${st.session_state['gp_per_unit']:.2f} per unit) in the settlement period {st.session_state['gp_period']}.")
         st.text(response_text)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
@@ -6018,7 +6025,7 @@ with st.chat_message("assistant"):
             st.info(st.session_state["gm_did_you_mean"])
         
         response_text = (f"The gross margin for ASIN {st.session_state['gm_asin']} was {st.session_state['gm_margin']} "
-                        f"in the settlement period {st.session_state['gm_period']}.")
+            f"in the settlement period {st.session_state['gm_period']}.")
         st.write(response_text)
         if st.session_state.get("business_file"):
             st.caption(f"Source file: {st.session_state['business_file']}")
@@ -6185,6 +6192,6 @@ with st.chat_message("assistant"):
             st.markdown(training_message)
             store_assistant_response(training_message)
         else:
-            final_response = assistant_text or "I didn't detect a supported request. Try one of the two examples above."
+            final_response = assistant_text or "I haven't been trained for that question. Please reach out to your account representative. In the meantime, would you like to know the answer to one of the following questions?\n\n- Show ASINs with average sales price below plan.\n- Show the total sales lost to other sellers last week.\n- Show ASINs with average total fees higher than plan for the last settlement period."
             st.write(final_response)
             store_assistant_response(final_response)
