@@ -2884,13 +2884,6 @@ def tool_gross_profit_descending_order(dataframes: Dict[str, pd.DataFrame], prom
         .copy()
     )
 
-    # Drop any rows with blank/missing Brand or ASIN
-    df_gp = df_gp[df_gp["Brand"].notna() & df_gp["ASIN"].notna()]
-    df_gp = df_gp[
-        (df_gp["Brand"].astype(str).str.strip() != "") &
-        (df_gp["ASIN"].astype(str).str.strip()  != "")
-    ]
-
     # Convert Gross Profit to numeric for sorting
     df_gp["GP_num"] = (
         df_gp["Gross Profit"]
@@ -3173,56 +3166,83 @@ def tool_top_asins_sales(dataframes: Dict[str, pd.DataFrame], prompt: str, compa
     Examples: 'Show top 10 ASINs sales in descending order'.
     Saves formatted string and table in session_state['top_asins_sales_string'] and 'top_asins_sales_table'].
     """
-    # Extract number from prompt
-    m = re.search(r"\bshow\s+top\s+(\d+)\s+asins?\s+", prompt.lower())
-    if not m:
-        st.session_state["agent_error"] = "Please specify a number (e.g., 'Show top 10 ASINs sales')."
-        return "no_data"
-    
-    N = int(m.group(1))
+    try:
+        # Find ASIN report using smart detection
+        asin_report = _smart_find_asin_report(dataframes, company_name)
+        if not asin_report:
+            st.session_state["agent_error"] = "Could not find ASIN aggregated report file."
+            return "error"
+        
+        asin_df = dataframes[asin_report]
+        print(f"DEBUG SALES: Loaded ASIN data with {len(asin_df)} rows")
+        print(f"DEBUG SALES: ASIN data columns: {list(asin_df.columns)}")
+        print(f"DEBUG SALES: First few ASINs: {asin_df['ASIN'].head(10).tolist()}")
+        
+        # Calculate settlement period from the dataframes
+        settlement_period = _calculate_settlement_period(dataframes, company_name)
+        
+        # Extract number from prompt
+        m = re.search(r"\bshow\s+top\s+(\d+)\s+asins?\s+", prompt.lower())
+        if not m:
+            st.session_state["agent_error"] = "Please specify a number (e.g., 'Show top 10 ASINs sales')."
+            return "no_data"
+        
+        N = int(m.group(1))
 
-    # Pull Brand, ASIN + ATS
-    df_sales = (
-        asin_df[["Brands", "ASIN", "Amazon Top-line Sales (ATS)"]]
-        .rename(columns={"Brands": "Brand"})
-        .copy()
-    )
+        # Pull Brand, ASIN + ATS
+        df_sales = (
+            asin_df[["Brands", "ASIN", "Amazon Top-line Sales (ATS)"]]
+            .rename(columns={"Brands": "Brand"})
+            .copy()
+        )
+        
+        print(f"DEBUG SALES: After selecting columns: {len(df_sales)} rows")
+        print(f"DEBUG SALES: ATS column values: {df_sales['Amazon Top-line Sales (ATS)'].head(10).tolist()}")
+        print(f"DEBUG SALES: ATS null values: {df_sales['Amazon Top-line Sales (ATS)'].isnull().sum()}")
 
-    # Clean and convert
-    df_sales["ATS_num"] = (
-        df_sales["Amazon Top-line Sales (ATS)"]
-          .astype(str)
-          .str.replace(r"[\$,]", "", regex=True)
-          .astype(float)
-          .fillna(0.0)
-    )
+        # Clean and convert
+        df_sales["ATS_num"] = (
+            df_sales["Amazon Top-line Sales (ATS)"]
+              .astype(str)
+              .str.replace(r"[\$,]", "", regex=True)
+              .astype(float)
+              .fillna(0.0)
+        )
+        
+        print(f"DEBUG SALES: After cleaning: {len(df_sales)} rows")
+        print(f"DEBUG SALES: ATS_num values: {df_sales['ATS_num'].head(10).tolist()}")
+        print(f"DEBUG SALES: ATS_num null values: {df_sales['ATS_num'].isnull().sum()}")
 
-    # Sort descending, take top N, reset index
-    out = (
-        df_sales.sort_values("ATS_num", ascending=False)
-                .head(N)
-                .reset_index(drop=True)
-    )
+        # Sort descending, take top N, reset index
+        out = (
+            df_sales.sort_values("ATS_num", ascending=False)
+                    .head(N)
+                    .reset_index(drop=True)
+        )
 
-    # Format ATS back to dollars & rename
-    out["Sales"] = out["ATS_num"].map("${:,.2f}".format)
+        # Format ATS back to dollars & rename
+        out["Sales"] = out["ATS_num"].map("${:,.2f}".format)
 
-    # Keep only the columns we want
-    out = out[["Brand", "ASIN", "Sales"]]
+        # Keep only the columns we want
+        out = out[["Brand", "ASIN", "Sales"]]
 
-    # 1‑index the table and name the index
-    out.index = out.index + 1
-    out.index.name = "No."
+        # 1‑index the table and name the index
+        out.index = out.index + 1
+        out.index.name = "No."
 
-    # Create formatted string
-    formatted_string = f"Here is the list of ASINs' sales in descending order for the settlement period {settlement_period}:"
+        # Create formatted string
+        formatted_string = f"Here is the list of ASINs' sales in descending order for the settlement period {settlement_period}:"
 
-    # Save for UI
-    st.session_state["top_asins_sales_string"] = formatted_string
-    st.session_state["top_asins_sales_table"] = out
-    st.session_state["top_asins_sales_count"] = N
-    st.session_state["top_asins_sales_period"] = settlement_period
-    return "ok"
+        # Save for UI
+        st.session_state["top_asins_sales_string"] = formatted_string
+        st.session_state["top_asins_sales_table"] = out
+        st.session_state["top_asins_sales_count"] = N
+        st.session_state["top_asins_sales_period"] = settlement_period
+        return "ok"
+        
+    except Exception as e:
+        st.session_state["agent_error"] = f"Error processing top ASINs sales: {str(e)}"
+        return "error"
 
 
 def tool_fees_higher_than_plan(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
@@ -3839,56 +3859,85 @@ def tool_top_asins_gross_profit(dataframes: Dict[str, pd.DataFrame], prompt: str
     Examples: 'Show top 10 ASINs gross profit in descending order'.
     Saves formatted string and table in session_state['top_asins_gp_string'] and 'top_asins_gp_table'].
     """
-    # Extract number from prompt
-    m = re.search(r"\bshow\s+top\s+(\d+)\s+asins?\s+", prompt.lower())
-    if not m:
-        st.session_state["agent_error"] = "Please specify a number (e.g., 'Show top 10 ASINs gross profit')."
-        return "no_data"
-    
-    N = int(m.group(1))
+    print(f"DEBUG: tool_top_asins_gross_profit called with prompt: '{prompt}'")
+    try:
+        # Find ASIN report using smart detection
+        asin_report = _smart_find_asin_report(dataframes, company_name)
+        if not asin_report:
+            st.session_state["agent_error"] = "Could not find ASIN aggregated report file."
+            return "error"
+        
+        asin_df = dataframes[asin_report]
+        print(f"DEBUG: Loaded ASIN data with {len(asin_df)} rows")
+        print(f"DEBUG: ASIN data columns: {list(asin_df.columns)}")
+        print(f"DEBUG: First few ASINs: {asin_df['ASIN'].head(10).tolist()}")
+        
+        # Calculate settlement period from the dataframes
+        settlement_period = _calculate_settlement_period(dataframes, company_name)
+        
+        # Extract number from prompt
+        m = re.search(r"\bshow\s+top\s+(\d+)\s+asins?\s+", prompt.lower())
+        if not m:
+            st.session_state["agent_error"] = "Please specify a number (e.g., 'Show top 10 ASINs gross profit')."
+            return "no_data"
+        
+        N = int(m.group(1))
+        print(f"DEBUG: Extracted N = {N}")
 
-    # Pull Brand, ASIN + Gross Profit
-    df_gp = (
-        asin_df[["Brands", "ASIN", "Gross Profit"]]
-        .rename(columns={"Brands": "Brand"})
-        .copy()
-    )
+        # Pull Brand, ASIN + Gross Profit
+        df_gp = (
+            asin_df[["Brands", "ASIN", "Gross Profit"]]
+            .rename(columns={"Brands": "Brand"})
+            .copy()
+        )
+        
+        print(f"DEBUG: After selecting columns: {len(df_gp)} rows")
+        print(f"DEBUG: Gross Profit column values: {df_gp['Gross Profit'].head(10).tolist()}")
+        print(f"DEBUG: Gross Profit null values: {df_gp['Gross Profit'].isnull().sum()}")
 
-    # Clean and convert
-    df_gp["GP_num"] = (
-        df_gp["Gross Profit"]
-          .astype(str)
-          .str.replace(r"[\$,]", "", regex=True)
-          .astype(float)
-          .fillna(0.0)
-    )
+        # Clean and convert
+        df_gp["GP_num"] = (
+            df_gp["Gross Profit"]
+              .astype(str)
+              .str.replace(r"[\$,]", "", regex=True)
+              .astype(float)
+              .fillna(0.0)
+        )
+        
+        print(f"DEBUG: After cleaning: {len(df_gp)} rows")
+        print(f"DEBUG: GP_num values: {df_gp['GP_num'].head(10).tolist()}")
+        print(f"DEBUG: GP_num null values: {df_gp['GP_num'].isnull().sum()}")
 
-    # Sort descending, take top N, reset index
-    out = (
-        df_gp.sort_values("GP_num", ascending=False)
-                .head(N)
-                .reset_index(drop=True)
-    )
+        # Sort descending, take top N, reset index
+        out = (
+            df_gp.sort_values("GP_num", ascending=False)
+                    .head(N)
+                    .reset_index(drop=True)
+        )
 
-    # Format Gross Profit back to dollars & rename
-    out["Gross Profit"] = out["GP_num"].map("${:,.2f}".format)
+        # Format Gross Profit back to dollars & rename
+        out["Gross Profit"] = out["GP_num"].map("${:,.2f}".format)
 
-    # Keep only the columns we want
-    out = out[["Brand", "ASIN", "Gross Profit"]]
+        # Keep only the columns we want
+        out = out[["Brand", "ASIN", "Gross Profit"]]
 
-    # 1‑index the table and name the index
-    out.index = out.index + 1
-    out.index.name = "No."
+        # 1‑index the table and name the index
+        out.index = out.index + 1
+        out.index.name = "No."
 
-    # Create formatted string
-    formatted_string = f"Here is the list of ASINs' gross profit in descending order for the settlement period {settlement_period}:"
+        # Create formatted string
+        formatted_string = f"Here is the list of ASINs' gross profit in descending order for the settlement period {settlement_period}:"
 
-    # Save for UI
-    st.session_state["top_asins_gp_string"] = formatted_string
-    st.session_state["top_asins_gp_table"] = out
-    st.session_state["top_asins_gp_count"] = N
-    st.session_state["top_asins_gp_period"] = settlement_period
-    return "ok"
+        # Save for UI
+        st.session_state["top_asins_gp_string"] = formatted_string
+        st.session_state["top_asins_gp_table"] = out
+        st.session_state["top_asins_gp_count"] = N
+        st.session_state["top_asins_gp_period"] = settlement_period
+        return "ok"
+        
+    except Exception as e:
+        st.session_state["agent_error"] = f"Error processing top ASINs gross profit: {str(e)}"
+        return "error"
 
 
 def tool_top_asins_gross_margin(dataframes: Dict[str, pd.DataFrame], prompt: str, company_name: str = None) -> str:
@@ -3911,6 +3960,10 @@ def tool_top_asins_gross_margin(dataframes: Dict[str, pd.DataFrame], prompt: str
         .rename(columns={"Brands": "Brand"})
         .copy()
     )
+    
+    print(f"DEBUG GM: After selecting columns: {len(df_gm)} rows")
+    print(f"DEBUG GM: Gross Margin column values: {df_gm['Gross Margin'].head(10).tolist()}")
+    print(f"DEBUG GM: Gross Margin null values: {df_gm['Gross Margin'].isnull().sum()}")
 
     # Clean and convert
     df_gm["GM_num"] = (
@@ -3920,6 +3973,10 @@ def tool_top_asins_gross_margin(dataframes: Dict[str, pd.DataFrame], prompt: str
           .astype(float)
           .fillna(0.0)
     )
+    
+    print(f"DEBUG GM: After cleaning: {len(df_gm)} rows")
+    print(f"DEBUG GM: GM_num values: {df_gm['GM_num'].head(10).tolist()}")
+    print(f"DEBUG GM: GM_num null values: {df_gm['GM_num'].isnull().sum()}")
 
     # Sort descending, take top N, reset index
     out = (
