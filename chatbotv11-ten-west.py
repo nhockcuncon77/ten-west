@@ -3365,7 +3365,6 @@ def tool_units_sold_for_specific_asin(dataframes: Dict[str, pd.DataFrame], promp
         # Add "Did you mean?" message if closest match was used
         if closest_match_used:
             st.session_state["units_sold_did_you_mean"] = f"Did you mean {asin_q}? (searched for {original_asin})"
-            print(f"DEBUG: Set units_sold_did_you_mean: {st.session_state['units_sold_did_you_mean']}")
         
         return "ok"
         
@@ -5446,11 +5445,11 @@ for k in ("conv_table", "conv_period", "avg_cr", "avg_period_display", "agent_er
           "orders_referral_fees_higher_table", "orders_referral_fees_higher_period", "orders_referral_fees_higher_string",
           "orders_fulfillment_fees_higher_table", "orders_fulfillment_fees_higher_period", "orders_fulfillment_fees_higher_string",
           "settlement_period_definition", "settlement_period_timing", "settlement_period_reason",
-          "units_sold_asin", "units_sold_count", "units_sold_period",
-          "sales_asin", "sales_amount", "sales_units", "sales_period",
-          "fees_asin", "fees_total", "fees_per_unit", "fees_period",
-          "gp_asin", "gp_amount", "gp_per_unit", "gp_period",
-          "gm_asin", "gm_margin", "gm_period"):
+          "units_sold_asin", "units_sold_count", "units_sold_period", "units_sold_did_you_mean",
+          "sales_asin", "sales_amount", "sales_units", "sales_period", "sales_did_you_mean",
+          "fees_asin", "fees_total", "fees_per_unit", "fees_period", "fees_did_you_mean",
+          "gp_asin", "gp_amount", "gp_per_unit", "gp_period", "gp_did_you_mean",
+          "gm_asin", "gm_margin", "gm_period", "gm_did_you_mean"):
     st.session_state.pop(k, None)
 
 # Add current user message to history and display it
