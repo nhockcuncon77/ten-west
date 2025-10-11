@@ -4445,7 +4445,7 @@ def tool_orders_referral_fees_higher_plan(dataframes: Dict[str, pd.DataFrame], p
             st.session_state["agent_error"] = "No valid ASIN found in the prompt. Please provide an ASIN in any alphanumeric format like XXXXXXXX."
             return "error"
         
-        asin_q = asin_match.group(1)
+        asin_q = asin_match.group(1) or asin_match.group(2)
         
         # "did you mean?" fallback
         all_asins = asin_df["ASIN"].astype(str).str.upper().tolist()
@@ -4473,114 +4473,85 @@ def tool_orders_referral_fees_higher_plan(dataframes: Dict[str, pd.DataFrame], p
 
         # 2) Normalize order_df & merge ASIN
         df = (
-            order_df
-            .assign(
+            order_df.assign(
                 SKU=lambda d: d["sku"].astype(str).str.upper().str.strip(),
-                type=lambda d: d["type"].astype(str).str.lower().str.strip()
+                type=lambda d: d["type"].astype(str).str.lower().str.strip(),
             )
             .merge(sku_asin_map, on="SKU", how="left")
         )
 
-        # 3) Filter to this ASIN's order lines
+        # 3) Filter to "order" rows for this ASIN
         df = df[(df["type"] == "order") & (df["ASIN"] == asin_q)]
         if df.empty:
             st.session_state["agent_error"] = f"No orders for ASIN {asin_q} in the settlement period {settlement_period}."
             return "error"
 
-        # 4) Parse numerics BEFORE grouping
-        df["quantity_num"] = pd.to_numeric(df["quantity"], errors="coerce").fillna(0)
-        df["selling_fees_num"] = pd.to_numeric(df["selling fees"], errors="coerce").fillna(0.0)
-
-        # 5) Stable quantity aggregator
-        def _stable_qty(s: pd.Series) -> float:
-            pos = s[s > 0]
-            if pos.empty:
-                return 0.0
-            uniq = pd.unique(pos)
-            # If dataset repeats the same quantity on multiple rows → take that one value
-            if len(uniq) == 1:
-                return float(uniq[0])
-            # If dataset splits quantity across rows (e.g., 1 + 1) → sum
-            return float(pos.sum())
-
-        # 6) Collapse duplicates on order-level keys (drop date/time from grouping)
-        group_keys = ["order id", "SKU", "ASIN"]
-        if "order item id" in df.columns:
-            group_keys.insert(1, "order item id")  # increases stability
-
-        agg_map = {
-            "quantity_num": _stable_qty,
-            "selling_fees_num": "sum",
-        }
-        if "date/time" in df.columns:
-            agg_map["date/time"] = "min"  # keep earliest timestamp for display
-
-        g = (
-            df.groupby(group_keys, as_index=False)
-              .agg(agg_map)
-              .rename(columns={
-                  "order id": "Order ID",
-                  "date/time": "Date/Time",
-                  "quantity_num": "Quantity",
-                  "selling_fees_num": "Selling Fees Sum",
-              })
+        # 4) Planned referral fee per unit (ensure numeric)
+        df = df.merge(
+            unit_df[["ASIN", "FBA Referral Fee"]],
+            on="ASIN",
+            how="left",
+        ).rename(
+            columns={
+                "FBA Referral Fee": "Plan Referral Fee",
+            }
         )
+        # strip $ and commas if present
+        df["Plan Referral Fee"] = (
+            df["Plan Referral Fee"]
+            .astype(str)
+            .str.replace(r"[^\d.\-]", "", regex=True)
+            .replace("", float("nan"))
+            .astype(float)
+        ).fillna(0.0)
 
-        # 7) Flip referral fees positive and filter
-        g = g[g["Quantity"] > 0]
-        if g.empty:
-            st.session_state["agent_error"] = "No valid (non-zero quantity) orders after de-duplication."
+        # 5) Make actual referral fee positive; ensure quantity numeric
+        df["Quantity"] = pd.to_numeric(df["quantity"], errors="coerce").fillna(0).astype(int)
+        # selling fees are usually negative in settlements; flip them positive
+        df["Actual Referral Fee"] = (-pd.to_numeric(df["selling fees"], errors="coerce")).clip(lower=0)
+
+        # 6) Process each row individually (no grouping to preserve all order IDs)
+        # Rename columns for consistency
+        df = df.rename(columns={"order id": "Order ID"})
+        
+        # Standardize Date/Time column name if present
+        date_col_name = "date/time" if "date/time" in df.columns else None
+        if date_col_name:
+            df = df.rename(columns={date_col_name: "Date/Time"})
+        else:
+            df["Date/Time"] = pd.NaT  # keep column for a consistent output shape
+
+        # 7) Compute totals & deltas per order line
+        df = df[df["Quantity"] > 0]  # avoid div/0
+        if df.empty:
+            st.session_state["agent_error"] = f"No valid order lines (non-zero quantity) for ASIN {asin_q}."
             return "error"
 
-        g["Referral Fees"] = (-g["Selling Fees Sum"]).clip(lower=0.0)
+        df["Avg Fees per Unit"] = df["Actual Referral Fee"] / df["Quantity"]
+        df["Expected Fees per Unit"] = df["Plan Referral Fee"]
+        df["Delta"] = (df["Avg Fees per Unit"] - df["Expected Fees per Unit"]) * df["Quantity"]
 
-        # 8) Plan referral fee (1 row per ASIN; choose a single numeric value)
-        unit_plan = (
-            unit_df[["ASIN", "FBA Referral Fee"]].copy()
-            .assign(
-                ASIN=lambda d: d["ASIN"].astype(str).str.upper().str.strip(),
-                **{"FBA Referral Fee": lambda d: pd.to_numeric(
-                    d["FBA Referral Fee"].astype(str).str.replace(r"[^\d.\-]", "", regex=True),
-                    errors="coerce"
-                )}
-            )
-            .dropna(subset=["FBA Referral Fee"])
-            .drop_duplicates(subset="ASIN", keep="last")
-        )
-        plan_ser = unit_plan.loc[unit_plan["ASIN"] == asin_q, "FBA Referral Fee"]
-        if plan_ser.empty:
-            st.session_state["agent_error"] = f"No planned referral fee found for ASIN {asin_q}."
-            return "error"
-        plan_ref = float(plan_ser.max())
-
-        # 9) Per-unit and delta
-        g["Avg Fees per Unit"]      = g["Referral Fees"] / g["Quantity"]
-        g["Expected Fees per Unit"] = plan_ref
-        g["Delta"]                  = g["Avg Fees per Unit"] - g["Expected Fees per Unit"]
-
-        g = g[g["Delta"] > 0]
-        if g.empty:
-            st.session_state["agent_error"] = f"No orders for ASIN {asin_q} had avg. referral fees above plan (${plan_ref:,.2f})."
+        # 8) Keep only rows where Delta > 0 (fees above plan)
+        df = df[df["Delta"] > 0]
+        if df.empty:
+            st.session_state["agent_error"] = f"No orders for ASIN {asin_q} had referral fees above plan."
             return "error"
 
-        # 10) Brand lookup
+        # 9) Lookup Brand (uppercase)
         brand_map = asin_df.set_index(asin_df["ASIN"].str.upper())["Brands"].to_dict()
-        g["Brand"] = g["ASIN"].map(brand_map).fillna("UNKNOWN").str.upper()
+        df["Brand"] = df["ASIN"].map(brand_map).fillna("UNKNOWN").str.upper()
 
-        # 11) Format & render
-        if "Date/Time" not in g.columns:
-            g["Date/Time"] = pd.NaT
-
-        g["Quantity"]               = g["Quantity"].map(lambda x: f"{int(x):,}")
-        g["Referral Fees"]          = g["Referral Fees"].map("${:,.2f}".format)
-        g["Avg Fees per Unit"]      = g["Avg Fees per Unit"].map("${:,.2f}".format)
-        g["Expected Fees per Unit"] = g["Expected Fees per Unit"].map("${:,.2f}".format)
-        g["Delta"]                  = g["Delta"].map("${:,.2f}".format)
-
-        out = g[[
+        # 10) Select, format & index
+        out = df[[
             "Brand", "ASIN", "SKU", "Order ID", "Date/Time", "Quantity",
-            "Referral Fees", "Avg Fees per Unit", "Expected Fees per Unit", "Delta"
-        ]].reset_index(drop=True)
+            "Actual Referral Fee", "Avg Fees per Unit", "Expected Fees per Unit", "Delta"
+        ]].copy()
+
+        for col in ["Actual Referral Fee", "Avg Fees per Unit", "Expected Fees per Unit", "Delta"]:
+            out[col] = out[col].map("${:,.2f}".format)
+        out["Quantity"] = out["Quantity"].map("{:,}".format)
+
+        out = out.reset_index(drop=True)
         out.index = range(1, len(out) + 1)
         out.index.name = "No."
 
